@@ -15,7 +15,7 @@ class StudentConcernsScreen extends StatefulWidget {
   final Map<String, String>? teacherNames;
 
   const StudentConcernsScreen({
-    super.key, 
+    super.key,
     required this.student,
     this.teacherNames,
   });
@@ -29,7 +29,7 @@ class _StudentConcernsScreenState extends State<StudentConcernsScreen> {
   bool _isLoading = true;
   bool _isSubmitting = false;
   List<dynamic> _concerns = [];
-  
+
   String _recipient = 'System Administrator';
   String _topic = 'Absent Today (Needs Excuse)';
   XFile? _attachedImage;
@@ -37,6 +37,9 @@ class _StudentConcernsScreenState extends State<StudentConcernsScreen> {
   bool _isDocumentAttached = false;
 
   late Map<String, String> _professors;
+
+  // Returns true only when at least one teacher is assigned
+  bool get _hasTeacher => _professors.isNotEmpty;
 
   @override
   void initState() {
@@ -58,8 +61,8 @@ class _StudentConcernsScreenState extends State<StudentConcernsScreen> {
       _professors = {
         ...?widget.teacherNames,
       };
-      // Ensure default recipient is valid
-      if (!_professors.values.contains(_recipient)) {
+      // Only update recipient when professors are actually available
+      if (_professors.isNotEmpty && !_professors.values.contains(_recipient)) {
         _recipient = _professors.values.first;
       }
     });
@@ -91,28 +94,94 @@ class _StudentConcernsScreenState extends State<StudentConcernsScreen> {
           subtitle: 'Submit excuses or report issues',
         ),
         Expanded(
-          child: _isLoading 
-            ? const Center(child: CircularProgressIndicator())
-            : ListView(
-                padding: const EdgeInsets.fromLTRB(24, 24, 24, 100),
-                children: [
-                  const Text(
-                    'SUBMIT A CONCERN',
-                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: AppTheme.textSecondary, letterSpacing: 1.2),
-                  ),
-                  const SizedBox(height: 16),
-                  _buildForm(),
-                  const SizedBox(height: 32),
-                  const Text(
-                    'MY RECENT CONCERNS',
-                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: AppTheme.textSecondary, letterSpacing: 1.2),
-                  ),
-                  const SizedBox(height: 16),
-                  _buildRecentConcerns(),
-                ],
-              ),
+          child: _isLoading
+              ? const Center(child: CircularProgressIndicator())
+              : ListView(
+                  padding: const EdgeInsets.fromLTRB(24, 24, 24, 100),
+                  children: [
+                    const Text(
+                      'SUBMIT A CONCERN',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.bold,
+                        color: AppTheme.textSecondary,
+                        letterSpacing: 1.2,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    // Show form only when a teacher is assigned, otherwise show banner
+                    _hasTeacher ? _buildForm() : _buildNoTeacherBanner(),
+                    const SizedBox(height: 32),
+                    const Text(
+                      'MY RECENT CONCERNS',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.bold,
+                        color: AppTheme.textSecondary,
+                        letterSpacing: 1.2,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    _buildRecentConcerns(),
+                  ],
+                ),
         ),
       ],
+    );
+  }
+
+  /// Shown when no teacher has been assigned to the student.
+  Widget _buildNoTeacherBanner() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 16,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: AppTheme.primary.withOpacity(0.08),
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(
+              Icons.person_off_rounded,
+              size: 40,
+              color: AppTheme.primary,
+            ),
+          ),
+          const SizedBox(height: 20),
+          const Text(
+            'No Teacher Assigned',
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.bold,
+              color: AppTheme.primary,
+            ),
+          ),
+          const SizedBox(height: 10),
+          const Text(
+            'You currently have no teacher assigned. You can send your concerns to the admin on the Profile page by requesting for support.',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontSize: 13,
+              color: Colors.grey,
+              height: 1.6,
+            ),
+          ),
+          
+        ],
+      ),
     );
   }
 
@@ -122,20 +191,38 @@ class _StudentConcernsScreenState extends State<StudentConcernsScreen> {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(24),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 16, offset: const Offset(0, 4))],
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 16,
+            offset: const Offset(0, 4),
+          ),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _buildDropdown('Send To Prof:', _recipient, _professors.values.toList(), Icons.person_rounded, (v) => setState(() => _recipient = v!)),
+          _buildDropdown(
+            'Send To Prof:',
+            _recipient,
+            _professors.values.toList(),
+            Icons.person_rounded,
+            (v) => setState(() => _recipient = v!),
+          ),
           const SizedBox(height: 16),
-          _buildDropdown('Topic:', _topic, [
-            'Absent Today (Needs Excuse)',
-            'Running Late (Optional Excuse)',
-            'Club Activity Excuse',
-            'Technical Issue',
-            'Others',
-          ], Icons.topic_rounded, (v) => setState(() => _topic = v!)),
+          _buildDropdown(
+            'Topic:',
+            _topic,
+            [
+              'Absent Today (Needs Excuse)',
+              'Running Late (Optional Excuse)',
+              'Club Activity Excuse',
+              'Technical Issue',
+              'Others',
+            ],
+            Icons.topic_rounded,
+            (v) => setState(() => _topic = v!),
+          ),
           const SizedBox(height: 16),
           TextField(
             controller: _msgCtrl,
@@ -166,18 +253,36 @@ class _StudentConcernsScreenState extends State<StudentConcernsScreen> {
               backgroundColor: AppTheme.primary,
               foregroundColor: Colors.white,
               minimumSize: const Size(double.infinity, 56),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
             ),
-            child: _isSubmitting 
-              ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-              : const Text('SUBMIT CONCERN', style: TextStyle(fontWeight: FontWeight.bold)),
+            child: _isSubmitting
+                ? const SizedBox(
+                    width: 24,
+                    height: 24,
+                    child: CircularProgressIndicator(
+                      color: Colors.white,
+                      strokeWidth: 2,
+                    ),
+                  )
+                : const Text(
+                    'SUBMIT CONCERN',
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildDropdown(String label, String value, List<String> items, IconData icon, ValueChanged<String?> onChanged) {
+  Widget _buildDropdown(
+    String label,
+    String value,
+    List<String> items,
+    IconData icon,
+    ValueChanged<String?> onChanged,
+  ) {
     return DropdownButtonFormField<String>(
       value: value,
       decoration: InputDecoration(
@@ -196,7 +301,12 @@ class _StudentConcernsScreenState extends State<StudentConcernsScreen> {
         ),
         contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
       ),
-      items: items.map((v) => DropdownMenuItem(value: v, child: Text(v, style: const TextStyle(fontSize: 14)))).toList(),
+      items: items
+          .map((v) => DropdownMenuItem(
+                value: v,
+                child: Text(v, style: const TextStyle(fontSize: 14)),
+              ))
+          .toList(),
       onChanged: onChanged,
     );
   }
@@ -208,17 +318,34 @@ class _StudentConcernsScreenState extends State<StudentConcernsScreen> {
           ClipRRect(
             borderRadius: BorderRadius.circular(16),
             child: _attachedImageBytes != null
-                ? Image.memory(_attachedImageBytes!, width: double.infinity, height: 180, fit: BoxFit.cover)
-                : Image.file(File(_attachedImage!.path), width: double.infinity, height: 180, fit: BoxFit.cover),
+                ? Image.memory(
+                    _attachedImageBytes!,
+                    width: double.infinity,
+                    height: 180,
+                    fit: BoxFit.cover,
+                  )
+                : Image.file(
+                    File(_attachedImage!.path),
+                    width: double.infinity,
+                    height: 180,
+                    fit: BoxFit.cover,
+                  ),
           ),
           Positioned(
             top: 8,
             right: 8,
             child: GestureDetector(
-              onTap: () => setState(() { _attachedImage = null; _attachedImageBytes = null; _isDocumentAttached = false; }),
+              onTap: () => setState(() {
+                _attachedImage = null;
+                _attachedImageBytes = null;
+                _isDocumentAttached = false;
+              }),
               child: Container(
                 padding: const EdgeInsets.all(4),
-                decoration: const BoxDecoration(color: Colors.red, shape: BoxShape.circle),
+                decoration: const BoxDecoration(
+                  color: Colors.red,
+                  shape: BoxShape.circle,
+                ),
                 child: const Icon(Icons.close, color: Colors.white, size: 18),
               ),
             ),
@@ -241,28 +368,30 @@ class _StudentConcernsScreenState extends State<StudentConcernsScreen> {
   void _showImageSourceSheet() {
     showModalBottomSheet(
       context: context,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
       builder: (_) => SafeArea(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             ListTile(
-              leading: const Icon(Icons.camera_alt_rounded), 
-              title: const Text('Take a Photo'), 
-              onTap: () { 
+              leading: const Icon(Icons.camera_alt_rounded),
+              title: const Text('Take a Photo'),
+              onTap: () {
                 AppData.preventLock = true;
-                Navigator.pop(context); 
-                _pickImage(ImageSource.camera); 
-              }
+                Navigator.pop(context);
+                _pickImage(ImageSource.camera);
+              },
             ),
             ListTile(
-              leading: const Icon(Icons.photo_library_rounded), 
-              title: const Text('Choose from Gallery'), 
-              onTap: () { 
+              leading: const Icon(Icons.photo_library_rounded),
+              title: const Text('Choose from Gallery'),
+              onTap: () {
                 AppData.preventLock = true;
-                Navigator.pop(context); 
-                _pickImage(ImageSource.gallery); 
-              }
+                Navigator.pop(context);
+                _pickImage(ImageSource.gallery);
+              },
             ),
           ],
         ),
@@ -277,7 +406,11 @@ class _StudentConcernsScreenState extends State<StudentConcernsScreen> {
       final picked = await picker.pickImage(source: source);
       if (picked != null) {
         final bytes = await picked.readAsBytes();
-        setState(() { _attachedImage = picked; _attachedImageBytes = bytes; _isDocumentAttached = true; });
+        setState(() {
+          _attachedImage = picked;
+          _attachedImageBytes = bytes;
+          _isDocumentAttached = true;
+        });
       }
     } finally {
       // Delay reset to allow app to resume fully from the external activity
@@ -289,7 +422,9 @@ class _StudentConcernsScreenState extends State<StudentConcernsScreen> {
 
   Future<void> _submitConcern() async {
     if (_msgCtrl.text.isEmpty && !_isDocumentAttached) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please provide details.')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please provide details.')),
+      );
       return;
     }
 
@@ -312,30 +447,46 @@ class _StudentConcernsScreenState extends State<StudentConcernsScreen> {
 
       if (mounted) {
         if (success) {
-          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Concern submitted successfully!'), backgroundColor: Colors.green));
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Concern submitted successfully!'),
+              backgroundColor: Colors.green,
+            ),
+          );
           _msgCtrl.clear();
-          setState(() { 
-            _attachedImage = null; 
-            _attachedImageBytes = null; 
+          setState(() {
+            _attachedImage = null;
+            _attachedImageBytes = null;
             _isDocumentAttached = false;
             _isSubmitting = false;
           });
           _fetchConcerns();
         } else {
-          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Failed to submit concern.')));
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Failed to submit concern.')),
+          );
           setState(() => _isSubmitting = false);
         }
       }
     } catch (e) {
       if (mounted) {
         setState(() => _isSubmitting = false);
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error: $e')),
+        );
       }
     }
   }
 
   Widget _buildRecentConcerns() {
-    if (_concerns.isEmpty) return const Center(child: Text('No concerns submitted yet.', style: TextStyle(color: Colors.grey)));
+    if (_concerns.isEmpty) {
+      return const Center(
+        child: Text(
+          'No concerns submitted yet.',
+          style: TextStyle(color: Colors.grey),
+        ),
+      );
+    }
 
     return Column(
       children: _concerns.map((c) => _buildConcernTile(c)).toList(),
@@ -347,7 +498,7 @@ class _StudentConcernsScreenState extends State<StudentConcernsScreen> {
     final topic = concern['subject'] ?? 'No Topic';
     final body = concern['message'] ?? '';
     final id = concern['_id'] ?? '';
-    final timestamp = concern['createdAt'] != null 
+    final timestamp = concern['createdAt'] != null
         ? DateTime.parse(concern['createdAt']).toString().split('.')[0]
         : 'Recently';
 
@@ -363,7 +514,8 @@ class _StudentConcernsScreenState extends State<StudentConcernsScreen> {
             builder: (_) => ChatScreen(
               threadId: id,
               recipientName: concern['target'] ?? 'Support',
-              recipientRole: (concern['target'] ?? '').contains('Admin') ? 'System Staff' : 'Teacher',
+              recipientRole:
+                  (concern['target'] ?? '').contains('Admin') ? 'System Staff' : 'Teacher',
               currentUserName: widget.student.name,
               initialMessage: body,
               initialTopic: topic,
@@ -379,7 +531,11 @@ class _StudentConcernsScreenState extends State<StudentConcernsScreen> {
           borderRadius: BorderRadius.circular(16),
           border: Border.all(color: Colors.grey.shade100),
           boxShadow: [
-            BoxShadow(color: Colors.black.withOpacity(0.02), blurRadius: 8, offset: const Offset(0, 2)),
+            BoxShadow(
+              color: Colors.black.withOpacity(0.02),
+              blurRadius: 8,
+              offset: const Offset(0, 2),
+            ),
           ],
         ),
         child: Row(
@@ -390,7 +546,11 @@ class _StudentConcernsScreenState extends State<StudentConcernsScreen> {
                 color: AppTheme.primary.withOpacity(0.1),
                 borderRadius: BorderRadius.circular(12),
               ),
-              child: const Icon(Icons.chat_bubble_outline_rounded, color: AppTheme.primary, size: 20),
+              child: const Icon(
+                Icons.chat_bubble_outline_rounded,
+                color: AppTheme.primary,
+                size: 20,
+              ),
             ),
             const SizedBox(width: 16),
             Expanded(
@@ -404,7 +564,10 @@ class _StudentConcernsScreenState extends State<StudentConcernsScreen> {
                     style: const TextStyle(fontWeight: FontWeight.bold),
                   ),
                   const SizedBox(height: 2),
-                  Text(timestamp, style: const TextStyle(fontSize: 11, color: Colors.grey)),
+                  Text(
+                    timestamp,
+                    style: const TextStyle(fontSize: 11, color: Colors.grey),
+                  ),
                 ],
               ),
             ),
@@ -415,7 +578,14 @@ class _StudentConcernsScreenState extends State<StudentConcernsScreen> {
                 color: statusColor.withOpacity(0.1),
                 borderRadius: BorderRadius.circular(8),
               ),
-              child: Text(status, style: TextStyle(color: statusColor, fontSize: 10, fontWeight: FontWeight.bold)),
+              child: Text(
+                status,
+                style: TextStyle(
+                  color: statusColor,
+                  fontSize: 10,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
             ),
             const SizedBox(width: 4),
             Icon(Icons.chevron_right_rounded, size: 18, color: Colors.grey.shade300),
