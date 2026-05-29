@@ -1,0 +1,16 @@
+import 'package:flutter/foundation.dart';
+
+class AppConfig {
+  // ─── PRODUCTION TOGGLE ─────────────────────────────────────────────────────
+  // Set this to true when building the APK for the actual school release!
+  static const bool isProduction = true; 
+
+  // ─── SERVER URLS ───────────────────────────────────────────────────────────
+  // Replace these with your actual live server URLs when you deploy.
+  static const String devUrl = kIsWeb ? 'http://localhost:5000' : 'http://192.168.100.4:5000';
+  static const String prodUrl = 'https://autodemy-mobile-app-ou2v.onrender.com'; // Live Render Server
+
+  // ─── COMPUTED BASE URL ─────────────────────────────────────────────────────
+  static String get baseUrl => isProduction ? prodUrl : devUrl;
+  static String get apiBaseUrl => '$baseUrl/api';
+}
