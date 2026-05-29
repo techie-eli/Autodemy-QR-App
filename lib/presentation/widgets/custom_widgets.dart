@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'dart:io';
 import '../../core/theme/app_theme.dart';
 import '../../data/services/api_service.dart';
 import '../../data/app_data.dart';
@@ -155,13 +156,28 @@ class CustomHeader extends StatelessWidget {
                   onPressed: () => Navigator.pop(context),
                 )
               else
-                Container(
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.15),
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                  child: const Icon(Icons.school_rounded, color: Colors.white, size: 24),
+                ValueListenableBuilder<String?>(
+                  valueListenable: AppData.currentUserProfileImage,
+                  builder: (context, imgPath, _) {
+                    if (imgPath != null && imgPath.isNotEmpty) {
+                      return Container(
+                        width: 44,
+                        height: 44,
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(12),
+                          image: DecorationImage(image: FileImage(File(imgPath)), fit: BoxFit.cover),
+                        ),
+                      );
+                    }
+                    return Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      child: const Icon(Icons.school_rounded, color: Colors.white, size: 24),
+                    );
+                  },
                 ),
               Row(
                 children: [

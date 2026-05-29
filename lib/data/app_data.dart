@@ -78,6 +78,9 @@ class AppData {
   
   static Map<DateTime, List<dynamic>> calendarEvents = {};
 
+  // Store last announcement for undo functionality
+  static Map<String, dynamic>? lastAnnouncement;
+
   static double getGlobalAttendanceRate() {
     if (pastSessions.isEmpty) return 1.0;
     int totalP = pastSessions.fold(0, (sum, s) => sum + s.present);

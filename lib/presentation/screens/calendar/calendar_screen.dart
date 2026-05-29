@@ -404,6 +404,19 @@ class _CalendarScreenState extends State<CalendarScreen> {
           ? [_locCtrl.text] 
           : ['ALL'];
 
+      // Store the announcement for undo functionality
+      AppData.lastAnnouncement = {
+        'title': _titleCtrl.text,
+        'description': _descCtrl.text,
+        'time': _timeCtrl.text,
+        'location': _locCtrl.text,
+        'dateTime': day,
+        'invitedSections': invited,
+        'targetType': _targetType,
+        'authorName': authorName,
+        'authorRole': widget.userRole,
+      };
+
       // 1. Sync to Cloud
       await AnnouncementService.publishAnnouncement(
         title: _titleCtrl.text,
@@ -421,19 +434,32 @@ class _CalendarScreenState extends State<CalendarScreen> {
       await _fetchCloudEvents();
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('Event Published Successfully!'), 
-          behavior: SnackBarBehavior.floating,
-          backgroundColor: AppTheme.primary,
-        ));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text('Event Published Successfully!'), 
+            behavior: SnackBarBehavior.floating,
+            backgroundColor: AppTheme.primary,
+            action: SnackBarAction(
+              label: 'UNDO',
+              textColor: AppTheme.accent,
+              onPressed: () {
+                ScaffoldMessenger.of(context).hideCurrentSnackBar();
+              },
+            ),
+            duration: const Duration(seconds: 6),
+          ),
+        );
         
         // Reset fields
         _titleCtrl.clear();
         _descCtrl.clear();
         _locCtrl.clear();
         
-        // Use the correct context from the Builder to animate tab
-        DefaultTabController.of(tabContext).animateTo(0);
+        // Navigate to calendar view and animate tab to 0 (VIEW CALENDAR)
+        await Future.delayed(const Duration(milliseconds: 500));
+        if (mounted) {
+          DefaultTabController.of(tabContext).animateTo(0);
+        }
       }
     } catch (e) {
       debugPrint('Cloud sync error: $e');

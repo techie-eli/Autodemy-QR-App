@@ -8,6 +8,8 @@ import 'presentation/screens/auth/splash_screen.dart';
 import 'presentation/screens/auth/biometric_lock_screen.dart';
 import 'data/services/offline_service.dart';
 import 'data/services/notification_service.dart';
+import 'data/services/api_service.dart';
+import 'presentation/screens/teacher/create_event_screen.dart';
 import 'data/app_data.dart';
 
 import 'firebase_options.dart';
@@ -88,7 +90,13 @@ class _GlobalNotificationListenerState extends State<GlobalNotificationListener>
   }
 
   void _showGlobalOverlay(Map<String, dynamic> notif) {
+    // Suppress attendance-related notifications from showing as global snackbars
+    final ntype = (notif['type'] ?? '').toString();
+    if (ntype.startsWith('attendance')) return;
     scaffoldMessengerKey.currentState?.hideCurrentSnackBar();
+    
+    final isAnnouncement = ntype == 'announcement';
+    
     scaffoldMessengerKey.currentState?.showSnackBar(
       SnackBar(
         content: Row(
@@ -112,11 +120,29 @@ class _GlobalNotificationListenerState extends State<GlobalNotificationListener>
         duration: const Duration(seconds: 6),
         margin: const EdgeInsets.all(16),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        action: SnackBarAction(
-          label: 'DISMISS',
-          textColor: AppTheme.accent,
-          onPressed: () => scaffoldMessengerKey.currentState?.hideCurrentSnackBar(),
-        ),
+        action: isAnnouncement
+          ? SnackBarAction(
+              label: 'UNDO',
+              textColor: AppTheme.accent,
+              onPressed: () async {
+                scaffoldMessengerKey.currentState?.hideCurrentSnackBar();
+                final user = await ApiService.getUserData();
+                final role = (user?['role'] ?? '').toString().toLowerCase();
+                if (role.contains('teacher') || role.contains('admin')) {
+                  final ctx = scaffoldMessengerKey.currentState?.context;
+                  if (ctx != null) {
+                    Navigator.push(ctx, MaterialPageRoute(builder: (_) => const CreateEventScreen()));
+                  }
+                }
+              },
+            )
+          : SnackBarAction(
+              label: 'DISMISS',
+              textColor: AppTheme.accent,
+              onPressed: () {
+                scaffoldMessengerKey.currentState?.hideCurrentSnackBar();
+              },
+            ),
       ),
     );
   }

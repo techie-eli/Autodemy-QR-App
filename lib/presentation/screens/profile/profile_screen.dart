@@ -151,6 +151,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
         setState(() {
           _profileImage = File(imagePath);
         });
+        // Update global profile image notifier so other screens refresh
+        AppData.currentUserProfileImage.value = imagePath;
       }
     }
   }
@@ -168,6 +170,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
           _profileImage = File(pickedFile.path);
         });
         await prefs.setString(storageKey, pickedFile.path);
+        // propagate to global notifier so the avatar updates across the app
+        AppData.currentUserProfileImage.value = pickedFile.path;
       }
     } finally {
       // Extended delay to ensure OS transition is finished before re-enabling lock observer

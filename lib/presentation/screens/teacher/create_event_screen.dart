@@ -28,6 +28,45 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
   void initState() {
     super.initState();
     _loadSections();
+    _prefillFromLastAnnouncement();
+  }
+
+  void _prefillFromLastAnnouncement() {
+    if (AppData.lastAnnouncement != null) {
+      final announcement = AppData.lastAnnouncement!;
+      _titleController.text = announcement['title'] ?? '';
+      _descController.text = announcement['description'] ?? '';
+      _locationController.text = announcement['location'] ?? '';
+      
+      if (announcement['dateTime'] != null) {
+        final dt = announcement['dateTime'] is DateTime 
+          ? announcement['dateTime'] as DateTime
+          : DateTime.tryParse(announcement['dateTime'].toString());
+        if (dt != null) {
+          _selectedDate = dt;
+        }
+      }
+      
+      if (announcement['time'] != null) {
+        final timeStr = announcement['time'].toString();
+        final timeParts = timeStr.split(':');
+        if (timeParts.length >= 2) {
+          try {
+            final hour = int.parse(timeParts[0]);
+            final minute = int.parse(timeParts[1]);
+            _selectedTime = TimeOfDay(hour: hour, minute: minute);
+          } catch (e) {
+            debugPrint('Error parsing time: $e');
+          }
+        }
+      }
+      
+      if (announcement['invitedSections'] != null) {
+        _selectedSections.clear();
+        final sections = announcement['invitedSections'] as List;
+        _selectedSections.addAll(sections.cast<String>());
+      }
+    }
   }
 
   void _loadSections() async {
@@ -272,6 +311,17 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
         authorRole: 'Teacher',
       );
 
+      // Store the announcement for undo functionality
+      AppData.lastAnnouncement = {
+        'title': _titleController.text,
+        'description': _descController.text,
+        'time': _selectedTime.format(context),
+        'location': _locationController.text,
+        'dateTime': _selectedDate,
+        'invitedSections': _selectedSections.toList(),
+        'targetType': 'Students',
+      };
+
       // 2. Local Update
       final eventData = {
         'title': _titleController.text,
@@ -289,6 +339,7 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
             content: const Text('Announcement Published & Synced!'),
             backgroundColor: Colors.green,
             behavior: SnackBarBehavior.floating,
+            duration: const Duration(seconds: 6),
             action: SnackBarAction(
               label: 'UNDO',
               textColor: Colors.white,
