@@ -100,7 +100,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
         ),
         ActionCard(
           icon: Icons.settings_rounded,
-          title: 'Global Configuration',
+          title: 'Configuration',
           subtitle: 'Manage system-wide settings',
           onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const GlobalConfigScreen())),
         ),

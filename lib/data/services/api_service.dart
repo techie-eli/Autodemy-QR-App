@@ -80,6 +80,13 @@ class ApiService {
     throw Exception('DELETE $endpoint failed: ${response.statusCode}');
   }
 
+  static Future<dynamic> put(String endpoint, Map<String, dynamic> data) async {
+    final headers = await _getHeaders();
+    final response = await http.put(Uri.parse('$baseUrl$endpoint'), headers: headers, body: jsonEncode(data));
+    if (response.statusCode == 200 || response.statusCode == 201) return jsonDecode(response.body);
+    throw Exception('PUT $endpoint failed: ${response.statusCode}');
+  }
+
   static Future<Map<String, dynamic>?> login(String username, String password) async {
     try {
       final response = await http.post(

@@ -15,6 +15,9 @@ class AnnouncementService {
     required String targetType,
     required String authorName,
     required String authorRole,
+    String? eventType,
+    String? eventTypeLabel,
+    int? eventColor,
   }) async {
     final Map<String, dynamic> data = {
       'title': title,
@@ -27,6 +30,10 @@ class AnnouncementService {
       'authorName': authorName,
       'authorRole': authorRole,
     };
+
+    if (eventType != null) data['eventType'] = eventType;
+    if (eventTypeLabel != null) data['eventTypeLabel'] = eventTypeLabel;
+    if (eventColor != null) data['eventColor'] = eventColor;
 
     // Assuming we have a /announcements/publish endpoint in our backend
     final response = await ApiService.post('/announcements/publish', data);
@@ -42,6 +49,16 @@ class AnnouncementService {
     );
 
     return announcementId;
+  }
+
+  static Future<bool> updateAnnouncement(String announcementId, Map<String, dynamic> data) async {
+    try {
+      await ApiService.put('/announcements/$announcementId', data);
+      return true;
+    } catch (e) {
+      print('Update Announcement Error: $e');
+      return false;
+    }
   }
 
   static Future<bool> deleteAnnouncement(String announcementId) async {

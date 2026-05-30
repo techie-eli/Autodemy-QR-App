@@ -10,9 +10,11 @@ import '../../../data/services/notification_service.dart';
 
 enum EventType {
   schoolEvent,
-  independentStudy,
+  quiz,
   homeroom,
   classSession,
+  examination,
+  otherEvent,
 }
 
 extension EventTypeExtension on EventType {
@@ -20,12 +22,16 @@ extension EventTypeExtension on EventType {
     switch (this) {
       case EventType.schoolEvent:
         return 'School Event';
-      case EventType.independentStudy:
-        return 'Independent Study Period';
+      case EventType.quiz:
+        return 'Quiz';
       case EventType.homeroom:
         return 'Homeroom';
       case EventType.classSession:
         return 'Class Session';
+      case EventType.examination:
+        return 'Examination';
+      case EventType.otherEvent:
+        return 'Other Events';
     }
   }
 
@@ -33,12 +39,16 @@ extension EventTypeExtension on EventType {
     switch (this) {
       case EventType.schoolEvent:
         return const Color(0xFFE53935); // Red
-      case EventType.independentStudy:
+      case EventType.quiz:
         return const Color(0xFF1E88E5); // Blue
       case EventType.homeroom:
         return const Color(0xFF43A047); // Green
       case EventType.classSession:
         return const Color(0xFFFDD835); // Yellow
+      case EventType.examination:
+        return const Color(0xFFFB8C00); // Orange
+      case EventType.otherEvent:
+        return const Color(0xFF8E24AA); // Purple
     }
   }
 
@@ -46,12 +56,16 @@ extension EventTypeExtension on EventType {
     switch (this) {
       case EventType.schoolEvent:
         return const Color(0xFFFFEBEE);
-      case EventType.independentStudy:
+      case EventType.quiz:
         return const Color(0xFFE3F2FD);
       case EventType.homeroom:
         return const Color(0xFFE8F5E9);
       case EventType.classSession:
         return const Color(0xFFFFFDE7);
+      case EventType.examination:
+        return const Color(0xFFFFF3E0);
+      case EventType.otherEvent:
+        return const Color(0xFFF3E5F5);
     }
   }
 
@@ -68,12 +82,16 @@ extension EventTypeExtension on EventType {
     switch (this) {
       case EventType.schoolEvent:
         return Icons.school_rounded;
-      case EventType.independentStudy:
-        return Icons.menu_book_rounded;
+      case EventType.quiz:
+        return Icons.quiz_rounded;
       case EventType.homeroom:
         return Icons.home_rounded;
       case EventType.classSession:
         return Icons.class_rounded;
+      case EventType.examination:
+        return Icons.pending_actions_rounded;
+      case EventType.otherEvent:
+        return Icons.tag_rounded;
     }
   }
 }
@@ -609,6 +627,9 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
         targetType: 'Students',
         authorName: 'Teacher',
         authorRole: 'Teacher',
+        eventType: _selectedEventType.name,
+        eventTypeLabel: _selectedEventType.label,
+        eventColor: _selectedEventType.color.value,
       );
 
       // Store for prefill on next open — do NOT also write to AppData.calendarEvents.
@@ -623,6 +644,8 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
         'invitedSections': _selectedSections.toList(),
         'targetType': 'Students',
         'eventType': _selectedEventType.name,
+        'eventTypeLabel': _selectedEventType.label,
+        'eventColor': _selectedEventType.color.value,
       };
 
       // Keep in a local variable only for the UNDO snackbar action below.

@@ -4,6 +4,7 @@ import '../../../core/theme/app_theme.dart';
 import '../../../data/app_data.dart';
 import '../../../data/services/api_service.dart';
 import '../../../data/services/announcement_service.dart';
+import '../teacher/create_event_screen.dart';
 
 class CalendarScreen extends StatefulWidget {
   final bool embedded;
@@ -24,11 +25,32 @@ class CalendarEvent {
   final String time;
   final String location;
   final String description;
+  final String eventTypeLabel;
+  final Color eventColor;
+
   CalendarEvent({
-    required this.title, 
-    this.time = 'Whole Day', 
-    this.location = 'Main Campus', 
-    this.description = 'No description provided.'
+    required this.title,
+    this.time = 'Whole Day',
+    this.location = 'Main Campus',
+    this.description = 'No description provided.',
+    this.eventTypeLabel = '',
+    this.eventColor = AppTheme.primary,
+  });
+}
+
+class _CalendarEventEntry {
+  final CalendarEvent event;
+  final bool isCloudAnnouncement;
+  final int? localIndex;
+  final String? announcementId;
+  final dynamic sourceData;
+
+  _CalendarEventEntry({
+    required this.event,
+    this.isCloudAnnouncement = false,
+    this.localIndex,
+    this.announcementId,
+    this.sourceData,
   });
 }
 
@@ -43,6 +65,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
   final _locCtrl = TextEditingController();
   final _descCtrl = TextEditingController();
   DateTime _publishDate = DateTime.now();
+  EventType _selectedEventType = EventType.schoolEvent;
   String _targetType = 'Overall News';
   bool _isPublishing = false;
 
@@ -55,32 +78,57 @@ class _CalendarScreenState extends State<CalendarScreen> {
     super.dispose();
   }
 
-  List<CalendarEvent> _getEventsForDay(DateTime day) {
+  List<_CalendarEventEntry> _getEventsForDay(DateTime day) {
     final normalizedDay = DateTime(day.year, day.month, day.day);
-    
-    // 1. Get local/manual events
-    final List<CalendarEvent> events = (AppData.calendarEvents[normalizedDay] ?? []).map((e) => CalendarEvent(
-      title: e['title'],
-      time: e['time'],
-      location: e['location'],
-      description: e['description'],
-    )).toList();
 
-    // 2. Add cloud announcements for this day
-    final cloudEvents = _cloudAnnouncements.where((a) {
+    final localRaw = AppData.calendarEvents[normalizedDay] ?? [];
+    final localEntries = localRaw.asMap().entries.map((entry) {
+      final raw = entry.value;
+      int colorValue = AppTheme.primary.value;
+      if (raw['eventColor'] != null) {
+        final rawColor = raw['eventColor'];
+        colorValue = rawColor is int ? rawColor : int.tryParse(rawColor.toString()) ?? colorValue;
+      }
+      return _CalendarEventEntry(
+        event: CalendarEvent(
+          title: raw['title'] ?? 'Untitled Event',
+          time: raw['time'] ?? 'Whole Day',
+          location: raw['location'] ?? 'Main Campus',
+          description: raw['description'] ?? 'No description provided.',
+          eventTypeLabel: raw['eventTypeLabel'] ?? '',
+          eventColor: Color(colorValue),
+        ),
+        localIndex: entry.key,
+        sourceData: raw,
+      );
+    }).toList();
+
+    final cloudEntries = _cloudAnnouncements.where((a) {
       if (a['dateTime'] == null) return false;
       final dt = (a['dateTime'] is DateTime) ? a['dateTime'] : DateTime.tryParse(a['dateTime'].toString());
       if (dt == null) return false;
       return dt.year == day.year && dt.month == day.month && dt.day == day.day;
-    }).map((a) => CalendarEvent(
-      title: a['title'] ?? 'Announcement',
-      time: a['time'] ?? 'All Day',
-      location: a['location'] ?? 'Campus',
-      description: a['description'] ?? '',
-    ));
+    }).map((a) {
+      int eventColorValue = AppTheme.primary.value;
+      if (a['eventColor'] != null) {
+        eventColorValue = int.tryParse(a['eventColor'].toString()) ?? eventColorValue;
+      }
+      return _CalendarEventEntry(
+        event: CalendarEvent(
+          title: a['title'] ?? 'Announcement',
+          time: a['time'] ?? 'All Day',
+          location: a['location'] ?? 'Campus',
+          description: a['description'] ?? '',
+          eventTypeLabel: a['eventTypeLabel'] ?? '',
+          eventColor: Color(eventColorValue),
+        ),
+        isCloudAnnouncement: true,
+        announcementId: a['_id']?.toString(),
+        sourceData: a,
+      );
+    }).toList();
 
-    events.addAll(cloudEvents);
-    return events;
+    return [...localEntries, ...cloudEntries];
   }
 
   List<dynamic> _cloudAnnouncements = [];
@@ -225,6 +273,27 @@ class _CalendarScreenState extends State<CalendarScreen> {
               },
               onPageChanged: (focusedDay) => _focusedDay = focusedDay,
               eventLoader: _getEventsForDay,
+              calendarBuilders: CalendarBuilders(
+                markerBuilder: (context, date, events) {
+                  final eventEntries = events.whereType<_CalendarEventEntry>().toList();
+                  if (eventEntries.isEmpty) return const SizedBox.shrink();
+                  final markers = eventEntries.take(3).map((entry) {
+                    return Container(
+                      width: 6,
+                      height: 6,
+                      margin: const EdgeInsets.symmetric(horizontal: 1.5),
+                      decoration: BoxDecoration(
+                        color: entry.event.eventColor,
+                        shape: BoxShape.circle,
+                      ),
+                    );
+                  }).toList();
+                  return Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: markers,
+                  );
+                },
+              ),
               calendarStyle: CalendarStyle(
                 todayDecoration: BoxDecoration(color: AppTheme.primary.withOpacity(0.2), shape: BoxShape.circle),
                 todayTextStyle: const TextStyle(color: AppTheme.primary, fontWeight: FontWeight.bold),
@@ -263,6 +332,45 @@ class _CalendarScreenState extends State<CalendarScreen> {
             const SizedBox(height: 32),
             
             _buildPublishField(controller: _titleCtrl, label: 'Event Title', icon: Icons.title_rounded),
+            const SizedBox(height: 20),
+            
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: Colors.grey.shade200),
+              ),
+              child: DropdownButtonHideUnderline(
+                child: DropdownButton<EventType>(
+                  value: _selectedEventType,
+                  isExpanded: true,
+                  style: const TextStyle(color: AppTheme.textPrimary, fontWeight: FontWeight.bold, fontSize: 13),
+                  items: EventType.values.map((type) {
+                    return DropdownMenuItem(
+                      value: type,
+                      child: Row(
+                        children: [
+                          Container(
+                            width: 10,
+                            height: 10,
+                            margin: const EdgeInsets.only(right: 8),
+                            decoration: BoxDecoration(
+                              color: type.color,
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                          Text(type.label),
+                        ],
+                      ),
+                    );
+                  }).toList(),
+                  onChanged: (value) {
+                    if (value != null) setState(() => _selectedEventType = value);
+                  },
+                ),
+              ),
+            ),
             const SizedBox(height: 20),
             
             // Date & Time Row
@@ -404,6 +512,9 @@ class _CalendarScreenState extends State<CalendarScreen> {
           ? [_locCtrl.text] 
           : ['ALL'];
 
+      final String selectedLabel = _selectedEventType.label;
+      final int selectedColorValue = _selectedEventType.color.value;
+
       // Store the announcement for undo functionality
       AppData.lastAnnouncement = {
         'title': _titleCtrl.text,
@@ -415,6 +526,9 @@ class _CalendarScreenState extends State<CalendarScreen> {
         'targetType': _targetType,
         'authorName': authorName,
         'authorRole': widget.userRole,
+        'eventTypeLabel': selectedLabel,
+        'eventColor': selectedColorValue,
+        'eventType': _selectedEventType.name,
       };
 
       // 1. Sync to Cloud
@@ -428,6 +542,9 @@ class _CalendarScreenState extends State<CalendarScreen> {
         targetType: _targetType,
         authorName: authorName,
         authorRole: widget.userRole,
+        eventType: _selectedEventType.name,
+        eventTypeLabel: selectedLabel,
+        eventColor: selectedColorValue,
       );
 
       // 2. Trigger a full refresh of cloud data immediately
@@ -458,7 +575,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
         // Navigate to calendar view and animate tab to 0 (VIEW CALENDAR)
         await Future.delayed(const Duration(milliseconds: 500));
         if (mounted) {
-          DefaultTabController.of(tabContext).animateTo(0);
+          DefaultTabController.of(tabContext)?.animateTo(0);
         }
       }
     } catch (e) {
@@ -500,10 +617,176 @@ class _CalendarScreenState extends State<CalendarScreen> {
     );
   }
 
-  void _showEventDialog({CalendarEvent? eventToEdit, int? index}) {
+  void _showEventDialog({
+    CalendarEvent? eventToEdit,
+    int? index,
+    required DateTime day,
+    bool isCloudAnnouncement = false,
+    String? announcementId,
+    dynamic sourceData,
+  }) {
+    final titleCtrl = TextEditingController(text: eventToEdit?.title ?? '');
+    final locCtrl = TextEditingController(text: eventToEdit?.location ?? '');
+    final timeCtrl = TextEditingController(text: eventToEdit?.time ?? '08:00 AM');
+    final descCtrl = TextEditingController(text: eventToEdit?.description ?? '');
+    EventType selectedType = EventType.schoolEvent;
+    if (eventToEdit?.eventTypeLabel.isNotEmpty == true) {
+      selectedType = EventType.values.firstWhere(
+        (type) => type.label == eventToEdit!.eventTypeLabel,
+        orElse: () => EventType.schoolEvent,
+      );
+    }
+    bool isSaving = false;
+
+    showDialog<void>(
+      context: context,
+      barrierDismissible: true,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (ctx, setDialogState) {
+            return AlertDialog(
+              title: Text(eventToEdit == null ? 'Create Event' : 'Edit Event'),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    TextField(
+                      controller: titleCtrl,
+                      decoration: const InputDecoration(labelText: 'Title'),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: locCtrl,
+                      decoration: const InputDecoration(labelText: 'Location'),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: timeCtrl,
+                      decoration: const InputDecoration(labelText: 'Time'),
+                    ),
+                    const SizedBox(height: 12),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.grey.shade300),
+                      ),
+                      child: DropdownButtonHideUnderline(
+                        child: DropdownButton<EventType>(
+                          value: selectedType,
+                          isExpanded: true,
+                          items: EventType.values.map((type) {
+                            return DropdownMenuItem(
+                              value: type,
+                              child: Row(
+                                children: [
+                                  Container(
+                                    width: 10,
+                                    height: 10,
+                                    margin: const EdgeInsets.only(right: 8),
+                                    decoration: BoxDecoration(color: type.color, shape: BoxShape.circle),
+                                  ),
+                                  Text(type.label),
+                                ],
+                              ),
+                            );
+                          }).toList(),
+                          onChanged: (value) {
+                            if (value != null) setDialogState(() => selectedType = value);
+                          },
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: descCtrl,
+                      maxLines: 3,
+                      decoration: const InputDecoration(labelText: 'Description'),
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('CANCEL')),
+                ElevatedButton(
+                  onPressed: isSaving
+                      ? null
+                      : () async {
+                          if (titleCtrl.text.trim().isEmpty) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('Please enter a title for the event.')),
+                            );
+                            return;
+                          }
+
+                          setDialogState(() => isSaving = true);
+                          final normalizedDay = DateTime(day.year, day.month, day.day);
+                          final eventData = {
+                            'title': titleCtrl.text.trim(),
+                            'time': timeCtrl.text.trim(),
+                            'location': locCtrl.text.trim(),
+                            'description': descCtrl.text.trim(),
+                            'eventTypeLabel': selectedType.label,
+                            'eventColor': selectedType.color.value,
+                            'eventType': selectedType.name,
+                          };
+
+                          if (isCloudAnnouncement) {
+                            if (announcementId != null) {
+                              final updated = await AnnouncementService.updateAnnouncement(announcementId, eventData);
+                              if (updated) {
+                                await _fetchCloudEvents();
+                                if (mounted) {
+                                  setState(() {});
+                                  Navigator.pop(dialogContext);
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(content: Text('Announcement updated successfully.')),
+                                  );
+                                }
+                              } else {
+                                if (mounted) {
+                                  setDialogState(() => isSaving = false);
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(content: Text('Unable to update announcement.'), backgroundColor: Colors.redAccent),
+                                  );
+                                }
+                              }
+                            }
+                            return;
+                          }
+
+                          if (eventToEdit != null && index != null) {
+                            final list = AppData.calendarEvents[normalizedDay];
+                            if (list != null && index >= 0 && index < list.length) {
+                              list[index] = eventData;
+                            }
+                          } else {
+                            AppData.calendarEvents.putIfAbsent(normalizedDay, () => []).add(eventData);
+                          }
+
+                          if (mounted) {
+                            setState(() {});
+                            Navigator.pop(dialogContext);
+                          }
+                        },
+                  child: Text(eventToEdit == null ? 'CREATE' : 'UPDATE'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    ).then((_) {
+      titleCtrl.dispose();
+      locCtrl.dispose();
+      timeCtrl.dispose();
+      descCtrl.dispose();
+    });
   }
 
   void _showAddEventDialog() {
+    _showEventDialog(day: _selectedDay!);
   }
 
   Widget _buildEventList() {
@@ -537,15 +820,47 @@ class _CalendarScreenState extends State<CalendarScreen> {
             Navigator.of(context, rootNavigator: true).push(
               MaterialPageRoute(
                 builder: (_) => EventDetailsScreen(
-                  event: event,
+                  event: event.event,
                   canEdit: widget.userRole == 'ADMIN' || widget.userRole == 'TEACHER',
                   onEdit: () {
-                    // Logic to edit could go here
+                    _showEventDialog(
+                      eventToEdit: event.event,
+                      index: event.localIndex,
+                      day: day,
+                      isCloudAnnouncement: event.isCloudAnnouncement,
+                      announcementId: event.announcementId,
+                      sourceData: event.sourceData,
+                    );
                   },
-                  onDelete: () {
-                    setState(() {
-                      AppData.calendarEvents[day]!.removeAt(index);
-                    });
+                  onDelete: () async {
+                    if (event.isCloudAnnouncement) {
+                      final id = event.announcementId;
+                      if (id == null) return false;
+                      final deleted = await AnnouncementService.deleteAnnouncement(id);
+                      if (deleted) {
+                        await _fetchCloudEvents();
+                        if (mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('Announcement deleted successfully.')),
+                          );
+                        }
+                      } else {
+                        if (mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('Unable to delete announcement.'), backgroundColor: Colors.redAccent),
+                          );
+                        }
+                      }
+                      return deleted;
+                    }
+
+                    if (event.localIndex != null) {
+                      setState(() {
+                        AppData.calendarEvents[day]!.removeAt(event.localIndex!);
+                      });
+                      return true;
+                    }
+                    return false;
                   },
                 ),
               ),
@@ -567,7 +882,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
                   Container(
                     width: 4,
                     decoration: BoxDecoration(
-                      color: AppTheme.primary,
+                      color: event.event.eventColor,
                       borderRadius: BorderRadius.circular(2),
                     ),
                   ),
@@ -577,19 +892,33 @@ class _CalendarScreenState extends State<CalendarScreen> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          event.title, 
-                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: AppTheme.textPrimary, letterSpacing: -0.5)
+                          event.event.title,
+                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: AppTheme.textPrimary, letterSpacing: -0.5),
                         ),
+                        if (event.event.eventTypeLabel.isNotEmpty) ...[
+                          const SizedBox(height: 6),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: event.event.eventColor.withOpacity(0.18),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Text(
+                              event.event.eventTypeLabel,
+                              style: TextStyle(color: event.event.eventColor, fontSize: 11, fontWeight: FontWeight.w700),
+                            ),
+                          ),
+                        ],
                         const SizedBox(height: 6),
                         Row(
                           children: [
                             Icon(Icons.access_time_rounded, size: 14, color: AppTheme.primary.withOpacity(0.6)),
                             const SizedBox(width: 6),
-                            Text(event.time, style: const TextStyle(color: AppTheme.textSecondary, fontSize: 12, fontWeight: FontWeight.w600)),
+                            Text(event.event.time, style: const TextStyle(color: AppTheme.textSecondary, fontSize: 12, fontWeight: FontWeight.w600)),
                             const SizedBox(width: 16),
                             Icon(Icons.location_on_rounded, size: 14, color: AppTheme.primary.withOpacity(0.6)),
                             const SizedBox(width: 6),
-                            Text(event.location, style: const TextStyle(color: AppTheme.textSecondary, fontSize: 12, fontWeight: FontWeight.w600)),
+                            Text(event.event.location, style: const TextStyle(color: AppTheme.textSecondary, fontSize: 12, fontWeight: FontWeight.w600)),
                           ],
                         ),
                       ],
@@ -610,14 +939,14 @@ class EventDetailsScreen extends StatelessWidget {
   final CalendarEvent event;
   final bool canEdit;
   final VoidCallback onEdit;
-  final VoidCallback onDelete;
+  final Future<bool> Function() onDelete;
 
   const EventDetailsScreen({
-    super.key, 
-    required this.event, 
-    this.canEdit = false, 
-    required this.onEdit, 
-    required this.onDelete
+    super.key,
+    required this.event,
+    this.canEdit = false,
+    required this.onEdit,
+    required this.onDelete,
   });
 
   @override
@@ -675,6 +1004,20 @@ class EventDetailsScreen extends StatelessWidget {
                     event.title,
                     style: const TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold),
                   ),
+                  if (event.eventTypeLabel.isNotEmpty) ...[
+                    const SizedBox(height: 12),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: event.eventColor.withOpacity(0.18),
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      child: Text(
+                        event.eventTypeLabel,
+                        style: TextStyle(color: event.eventColor, fontSize: 13, fontWeight: FontWeight.w700),
+                      ),
+                    ),
+                  ],
                   const SizedBox(height: 12),
                   Row(
                     children: [
@@ -734,12 +1077,14 @@ class EventDetailsScreen extends StatelessWidget {
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('CANCEL')),
           TextButton(
-            onPressed: () {
-              onDelete();
-              Navigator.pop(ctx);
-              Navigator.pop(context);
-            }, 
-            child: const Text('DELETE', style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold))
+            onPressed: () async {
+              final deleted = await onDelete();
+              if (deleted) {
+                Navigator.pop(ctx);
+                Navigator.pop(context);
+              }
+            },
+            child: const Text('DELETE', style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold)),
           ),
         ],
       ),

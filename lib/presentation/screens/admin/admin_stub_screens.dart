@@ -263,6 +263,37 @@ class _ManageAccountsScreenState extends State<ManageAccountsScreen> {
     }
   }
 
+  Future<bool> _toggleAccountStatus(String id, String currentStatus, String name) async {
+    final newStatus = currentStatus == 'ACTIVE' ? 'UNVERIFIED' : 'ACTIVE';
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Confirm Status Change'),
+        content: Text('Do you want to mark $name as $newStatus?'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('CANCEL')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: TextButton.styleFrom(foregroundColor: AppTheme.primary),
+            child: const Text('CONFIRM'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return false;
+
+    final success = await ApiService.updateUser(id, {'status': newStatus});
+    if (mounted) {
+      if (success) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Account status updated to $newStatus.')));
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Unable to update account status.')));
+      }
+    }
+    return success;
+  }
+
   @override
   Widget build(BuildContext context) {
     final filteredUsers = _allUsers.where((u) => 

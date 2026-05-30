@@ -1097,6 +1097,24 @@ app.get('/api/announcements', verifyToken, async (req, res) => {
     }
 });
 
+app.put('/api/announcements/:id', verifyToken, async (req, res) => {
+    try {
+        if (req.userRole !== 'ADMIN' && req.userRole !== 'TEACHER') {
+            return res.status(403).json({ message: 'Forbidden' });
+        }
+        const announcement = await Announcement.findByIdAndUpdate(req.params.id, req.body, {
+            new: true,
+            runValidators: true,
+        });
+        if (!announcement) {
+            return res.status(404).json({ message: 'Announcement not found' });
+        }
+        res.json(announcement);
+    } catch (err) {
+        res.status(500).json({ message: err.message });
+    }
+});
+
 app.delete('/api/announcements/:id', verifyToken, async (req, res) => {
     try {
         if (req.userRole !== 'ADMIN' && req.userRole !== 'TEACHER') {

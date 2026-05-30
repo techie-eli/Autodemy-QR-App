@@ -611,7 +611,16 @@ class _AddSectionDialogState extends State<_AddSectionDialog> {
     
     if (mounted) {
       setState(() => _isLoading = false);
-      if (ok) Navigator.pop(context, true);
+      if (ok) {
+        Navigator.pop(context, true);
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Unable to assign section. Please try again.'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
     }
   }
 
