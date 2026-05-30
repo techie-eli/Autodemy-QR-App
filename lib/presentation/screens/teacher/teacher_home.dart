@@ -32,6 +32,7 @@ class TeacherHomeScreen extends StatefulWidget {
 }
 
 class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
+  final GlobalKey<BottomNavShellState> _shellKey = GlobalKey<BottomNavShellState>();
   bool _isLoading = true;
   Map<String, dynamic> _subjects = {};
 
@@ -71,6 +72,7 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
   @override
   Widget build(BuildContext context) {
     return BottomNavShell(
+      key: _shellKey,
       header: CustomHeader(
         title: 'TEACHER PANEL',
         subtitle: 'Hi, ${widget.teacherName}!',
@@ -121,7 +123,15 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
           icon: Icons.event_available_rounded,
           title: 'Make New Event',
           subtitle: 'Create special school events',
-          onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const CreateEventScreen())),
+          onTap: () async {
+            final shouldOpenCalendar = await Navigator.push<bool>(
+              context,
+              MaterialPageRoute(builder: (_) => const CreateEventScreen()),
+            );
+            if (shouldOpenCalendar == true && mounted) {
+              _shellKey.currentState?.goToTab(2);
+            }
+          },
           iconColor: AppTheme.accent,
         ),
         const SizedBox(height: 24),

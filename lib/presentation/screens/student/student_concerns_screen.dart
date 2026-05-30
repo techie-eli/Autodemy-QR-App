@@ -1,12 +1,11 @@
 import 'dart:io';
 import 'dart:typed_data';
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../data/models/student_model.dart';
 import '../../../data/services/api_service.dart';
-import '../../../data/app_data.dart' hide Student;
+import '../../../data/app_data.dart';
 import '../../widgets/custom_widgets.dart';
 import '../messaging/chat_screen.dart';
 
@@ -493,6 +492,51 @@ class _StudentConcernsScreenState extends State<StudentConcernsScreen> {
     );
   }
 
+  Widget _buildPersonAvatar(String name, {String? imagePath}) {
+    if (imagePath != null && imagePath.isNotEmpty) {
+      try {
+        if (imagePath.startsWith('http')) {
+          return Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              image: DecorationImage(image: NetworkImage(imagePath), fit: BoxFit.cover),
+            ),
+          );
+        }
+        final file = File(imagePath);
+        if (file.existsSync()) {
+          return Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              image: DecorationImage(image: FileImage(file), fit: BoxFit.cover),
+            ),
+          );
+        }
+      } catch (_) {
+        // ignore invalid image path
+      }
+    }
+
+    return Container(
+      width: 40,
+      height: 40,
+      decoration: BoxDecoration(
+        color: AppTheme.primary.withOpacity(0.12),
+        shape: BoxShape.circle,
+      ),
+      child: Center(
+        child: Text(
+          name.isNotEmpty ? name[0].toUpperCase() : '?',
+          style: const TextStyle(color: AppTheme.primary, fontWeight: FontWeight.bold, fontSize: 16),
+        ),
+      ),
+    );
+  }
+
   Widget _buildConcernTile(dynamic concern) {
     final status = concern['status'] ?? 'PENDING';
     final topic = concern['subject'] ?? 'No Topic';
@@ -540,17 +584,9 @@ class _StudentConcernsScreenState extends State<StudentConcernsScreen> {
         ),
         child: Row(
           children: [
-            Container(
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                color: AppTheme.primary.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: const Icon(
-                Icons.chat_bubble_outline_rounded,
-                color: AppTheme.primary,
-                size: 20,
-              ),
+            _buildPersonAvatar(
+              concern['target']?.toString() ?? 'Support',
+              imagePath: concern['targetProfileImage']?.toString(),
             ),
             const SizedBox(width: 16),
             Expanded(

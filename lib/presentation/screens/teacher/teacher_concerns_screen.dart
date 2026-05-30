@@ -104,6 +104,51 @@ class _TeacherConcernsScreenState extends State<TeacherConcernsScreen> {
     );
   }
 
+  Widget _buildPersonAvatar(String name, {String? imagePath}) {
+    if (imagePath != null && imagePath.isNotEmpty) {
+      try {
+        if (imagePath.startsWith('http')) {
+          return Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              image: DecorationImage(image: NetworkImage(imagePath), fit: BoxFit.cover),
+            ),
+          );
+        }
+        final file = File(imagePath);
+        if (file.existsSync()) {
+          return Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              image: DecorationImage(image: FileImage(file), fit: BoxFit.cover),
+            ),
+          );
+        }
+      } catch (_) {
+        // ignore invalid image path
+      }
+    }
+
+    return Container(
+      width: 40,
+      height: 40,
+      decoration: BoxDecoration(
+        color: AppTheme.primary.withOpacity(0.12),
+        shape: BoxShape.circle,
+      ),
+      child: Center(
+        child: Text(
+          name.isNotEmpty ? name[0].toUpperCase() : '?',
+          style: const TextStyle(color: AppTheme.primary, fontWeight: FontWeight.bold, fontSize: 16),
+        ),
+      ),
+    );
+  }
+
   Widget _buildConcernCard(BuildContext context, dynamic concern) {
     final status = concern['status'] ?? 'PENDING';
     final student = concern['student'] != null ? concern['student']['name'] : 'Unknown Student';
@@ -129,13 +174,9 @@ class _TeacherConcernsScreenState extends State<TeacherConcernsScreen> {
             padding: const EdgeInsets.all(20),
             child: Row(
               children: [
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: AppTheme.primary.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                  child: const Icon(Icons.description_rounded, color: AppTheme.primary),
+                _buildPersonAvatar(
+                  student,
+                  imagePath: concern['student']?['profileImage']?.toString(),
                 ),
                 const SizedBox(width: 16),
                 Expanded(
@@ -169,7 +210,6 @@ class _TeacherConcernsScreenState extends State<TeacherConcernsScreen> {
 
   void _viewConcernDetails(BuildContext context, dynamic concern) {
     final String id = concern['_id'] ?? '';
-    final String status = concern['status'] ?? 'PENDING';
     final studentData = concern['student'] ?? {};
     final String studentName = studentData['name'] ?? 'Student';
     final String body = concern['message'] ?? '';

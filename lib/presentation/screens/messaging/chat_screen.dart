@@ -14,6 +14,7 @@ class ChatMessage {
   final DateTime time;
   final bool isMe;
   final String? attachmentPath;
+  final String? senderImagePath;
 
   ChatMessage({
     required this.sender,
@@ -21,6 +22,7 @@ class ChatMessage {
     required this.time,
     required this.isMe,
     this.attachmentPath,
+    this.senderImagePath,
   });
 
   String get formattedTime {
@@ -36,6 +38,7 @@ class ChatMessage {
       time: DateTime.parse(map['timestamp']),
       isMe: map['sender'] == currentUserId,
       attachmentPath: map['attachmentPath'],
+      senderImagePath: map['senderImagePath']?.toString() ?? map['senderProfileImage']?.toString() ?? map['senderPhoto']?.toString(),
     );
   }
 }
@@ -335,6 +338,61 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     );
   }
 
+  Widget _buildAvatar(String name, {String? imagePath}) {
+    if (imagePath != null && imagePath.isNotEmpty) {
+      try {
+        if (imagePath.startsWith('http')) {
+          return Container(
+            width: 32,
+            height: 32,
+            margin: const EdgeInsets.only(right: 8),
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              image: DecorationImage(
+                image: NetworkImage(imagePath),
+                fit: BoxFit.cover,
+              ),
+            ),
+          );
+        }
+        final file = File(imagePath);
+        if (file.existsSync()) {
+          return Container(
+            width: 32,
+            height: 32,
+            margin: const EdgeInsets.only(right: 8),
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              image: DecorationImage(image: FileImage(file), fit: BoxFit.cover),
+            ),
+          );
+        }
+      } catch (_) {
+        // ignore invalid image path
+      }
+    }
+
+    return Container(
+      width: 32,
+      height: 32,
+      margin: const EdgeInsets.only(right: 8),
+      decoration: BoxDecoration(
+        color: AppTheme.primary.withValues(alpha: 0.15),
+        shape: BoxShape.circle,
+      ),
+      child: Center(
+        child: Text(
+          name.isNotEmpty ? name[0].toUpperCase() : '?',
+          style: const TextStyle(
+            color: AppTheme.primary,
+            fontWeight: FontWeight.bold,
+            fontSize: 14,
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildMessageBubble(ChatMessage msg, bool showAvatar) {
     return Padding(
       padding: EdgeInsets.only(
@@ -347,25 +405,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
           if (!msg.isMe && showAvatar)
-            Container(
-              width: 32,
-              height: 32,
-              margin: const EdgeInsets.only(right: 8),
-              decoration: BoxDecoration(
-                color: AppTheme.primary.withValues(alpha: 0.15),
-                shape: BoxShape.circle,
-              ),
-              child: Center(
-                child: Text(
-                  msg.sender[0].toUpperCase(),
-                  style: const TextStyle(
-                    color: AppTheme.primary,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 14,
-                  ),
-                ),
-              ),
-            )
+            _buildAvatar(msg.sender, imagePath: msg.senderImagePath)
           else if (!msg.isMe)
             const SizedBox(width: 40),
 

@@ -99,19 +99,56 @@ class _GlobalNotificationListenerState extends State<GlobalNotificationListener>
     
     scaffoldMessengerKey.currentState?.showSnackBar(
       SnackBar(
-        content: Row(
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Icon(Icons.campaign_rounded, color: Colors.white),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(notif['title'] ?? 'New Announcement', style: const TextStyle(fontWeight: FontWeight.bold)),
-                  Text(notif['body'] ?? '', maxLines: 1, overflow: TextOverflow.ellipsis),
+            Row(
+              children: [
+                const Icon(Icons.campaign_rounded, color: Colors.white),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(notif['title'] ?? 'New Announcement', style: const TextStyle(fontWeight: FontWeight.bold)),
+                      Text(notif['body'] ?? '', maxLines: 1, overflow: TextOverflow.ellipsis),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                TextButton(
+                  onPressed: () {
+                    scaffoldMessengerKey.currentState?.hideCurrentSnackBar();
+                  },
+                  style: TextButton.styleFrom(foregroundColor: AppTheme.accent),
+                  child: const Text('DISMISS'),
+                ),
+                if (isAnnouncement) ...[
+                  const SizedBox(width: 8),
+                  TextButton(
+                    onPressed: () async {
+                      scaffoldMessengerKey.currentState?.hideCurrentSnackBar();
+                      final user = await ApiService.getUserData();
+                      final role = (user?['role'] ?? '').toString().toLowerCase();
+                      if (role.contains('teacher') || role.contains('admin')) {
+                        final ctx = scaffoldMessengerKey.currentState?.context;
+                        if (ctx != null) {
+                          Navigator.push(ctx, MaterialPageRoute(builder: (_) => const CreateEventScreen()));
+                        }
+                      }
+                    },
+                    style: TextButton.styleFrom(foregroundColor: AppTheme.accent),
+                    child: const Text('UNDO'),
+                  ),
                 ],
-              ),
+              ],
             ),
           ],
         ),
@@ -120,29 +157,6 @@ class _GlobalNotificationListenerState extends State<GlobalNotificationListener>
         duration: const Duration(seconds: 6),
         margin: const EdgeInsets.all(16),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        action: isAnnouncement
-          ? SnackBarAction(
-              label: 'UNDO',
-              textColor: AppTheme.accent,
-              onPressed: () async {
-                scaffoldMessengerKey.currentState?.hideCurrentSnackBar();
-                final user = await ApiService.getUserData();
-                final role = (user?['role'] ?? '').toString().toLowerCase();
-                if (role.contains('teacher') || role.contains('admin')) {
-                  final ctx = scaffoldMessengerKey.currentState?.context;
-                  if (ctx != null) {
-                    Navigator.push(ctx, MaterialPageRoute(builder: (_) => const CreateEventScreen()));
-                  }
-                }
-              },
-            )
-          : SnackBarAction(
-              label: 'DISMISS',
-              textColor: AppTheme.accent,
-              onPressed: () {
-                scaffoldMessengerKey.currentState?.hideCurrentSnackBar();
-              },
-            ),
       ),
     );
   }

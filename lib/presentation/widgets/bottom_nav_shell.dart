@@ -21,10 +21,10 @@ class BottomNavShell extends StatefulWidget {
   });
 
   @override
-  State<BottomNavShell> createState() => _BottomNavShellState();
+  State<BottomNavShell> createState() => BottomNavShellState();
 }
 
-class _BottomNavShellState extends State<BottomNavShell>
+class BottomNavShellState extends State<BottomNavShell>
     with TickerProviderStateMixin {
   int _currentIndex = 0;
   late AnimationController _pulseController;
@@ -46,6 +46,13 @@ class _BottomNavShellState extends State<BottomNavShell>
   void dispose() {
     _pulseController.dispose();
     super.dispose();
+  }
+
+  void goToTab(int index) {
+    if (index < 0 || index >= widget.pages.length) return;
+    setState(() {
+      _currentIndex = index;
+    });
   }
 
   @override
