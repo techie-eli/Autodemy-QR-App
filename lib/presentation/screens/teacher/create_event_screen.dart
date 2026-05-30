@@ -10,11 +10,9 @@ import '../../../data/services/notification_service.dart';
 
 enum EventType {
   schoolEvent,
-  quiz,
+  independentStudy,
   homeroom,
   classSession,
-  examination,
-  otherEvent,
 }
 
 extension EventTypeExtension on EventType {
@@ -22,16 +20,12 @@ extension EventTypeExtension on EventType {
     switch (this) {
       case EventType.schoolEvent:
         return 'School Event';
-      case EventType.quiz:
-        return 'Quiz';
+      case EventType.independentStudy:
+        return 'Independent Study Period';
       case EventType.homeroom:
         return 'Homeroom';
       case EventType.classSession:
         return 'Class Session';
-      case EventType.examination:
-        return 'Examination';
-      case EventType.otherEvent:
-        return 'Other Events';
     }
   }
 
@@ -39,16 +33,12 @@ extension EventTypeExtension on EventType {
     switch (this) {
       case EventType.schoolEvent:
         return const Color(0xFFE53935); // Red
-      case EventType.quiz:
+      case EventType.independentStudy:
         return const Color(0xFF1E88E5); // Blue
       case EventType.homeroom:
         return const Color(0xFF43A047); // Green
       case EventType.classSession:
         return const Color(0xFFFDD835); // Yellow
-      case EventType.examination:
-        return const Color(0xFFFB8C00); // Orange
-      case EventType.otherEvent:
-        return const Color(0xFF8E24AA); // Purple
     }
   }
 
@@ -56,16 +46,12 @@ extension EventTypeExtension on EventType {
     switch (this) {
       case EventType.schoolEvent:
         return const Color(0xFFFFEBEE);
-      case EventType.quiz:
+      case EventType.independentStudy:
         return const Color(0xFFE3F2FD);
       case EventType.homeroom:
         return const Color(0xFFE8F5E9);
       case EventType.classSession:
         return const Color(0xFFFFFDE7);
-      case EventType.examination:
-        return const Color(0xFFFFF3E0);
-      case EventType.otherEvent:
-        return const Color(0xFFF3E5F5);
     }
   }
 
@@ -82,16 +68,12 @@ extension EventTypeExtension on EventType {
     switch (this) {
       case EventType.schoolEvent:
         return Icons.school_rounded;
-      case EventType.quiz:
-        return Icons.quiz_rounded;
+      case EventType.independentStudy:
+        return Icons.menu_book_rounded;
       case EventType.homeroom:
         return Icons.home_rounded;
       case EventType.classSession:
         return Icons.class_rounded;
-      case EventType.examination:
-        return Icons.pending_actions_rounded;
-      case EventType.otherEvent:
-        return Icons.tag_rounded;
     }
   }
 }
@@ -139,18 +121,12 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
       }
 
       if (announcement['time'] != null) {
-        final timeStr = announcement['time'].toString().trim();
-        final timeRegex = RegExp(r'^(\d{1,2}):(\d{2})(?:\s*([AaPp][Mm]))?\$');
-        final match = timeRegex.firstMatch(timeStr);
-        if (match != null) {
+        final timeStr = announcement['time'].toString();
+        final timeParts = timeStr.split(':');
+        if (timeParts.length >= 2) {
           try {
-            var hour = int.parse(match.group(1)!);
-            final minute = int.parse(match.group(2)!);
-            final ampm = match.group(3)?.toUpperCase();
-            if (ampm != null) {
-              if (ampm == 'PM' && hour < 12) hour += 12;
-              if (ampm == 'AM' && hour == 12) hour = 0;
-            }
+            final hour = int.parse(timeParts[0]);
+            final minute = int.parse(timeParts[1]);
             _selectedTime = TimeOfDay(hour: hour, minute: minute);
           } catch (e) {
             debugPrint('Error parsing time: $e');
@@ -617,7 +593,7 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
     final day = DateTime(_selectedDate.year, _selectedDate.month, _selectedDate.day);
 
     try {
-      final announcementId = await AnnouncementService.publishAnnouncement(
+      await AnnouncementService.publishAnnouncement(
         title: _titleController.text,
         description: _descController.text,
         time: _selectedTime.format(context),
@@ -632,9 +608,6 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
         eventColor: _selectedEventType.color.value,
       );
 
-      // Store for prefill on next open — do NOT also write to AppData.calendarEvents.
-      // The calendar fetches events from the cloud via AnnouncementService, so
-      // writing locally here too is what caused every new event to appear twice.
       AppData.lastAnnouncement = {
         'title': _titleController.text,
         'description': _descController.text,
@@ -644,11 +617,11 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
         'invitedSections': _selectedSections.toList(),
         'targetType': 'Students',
         'eventType': _selectedEventType.name,
-        'eventTypeLabel': _selectedEventType.label,
-        'eventColor': _selectedEventType.color.value,
       };
 
-      // Keep in a local variable only for the UNDO snackbar action below.
+      // Write locally so the calendar shows the correct color immediately.
+      // The calendar's _getEventsForDay reads AppData.calendarEvents first,
+      // so this is the single source of truth when there is no backend.
       final eventData = {
         'title': _titleController.text,
         'time': _selectedTime.format(context),
@@ -659,97 +632,56 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
         'eventTypeLabel': _selectedEventType.label,
         'eventColor': _selectedEventType.color.value,
       };
-      // NOTE: eventData is intentionally NOT added to AppData.calendarEvents here.
+      AppData.calendarEvents.putIfAbsent(day, () => []).add(eventData);
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
+            content: Row(
               children: [
-                Row(
-                  children: [
-                    Container(
-                      width: 12,
-                      height: 12,
-                      decoration: BoxDecoration(
-                        color: _selectedEventType.color,
-                        shape: BoxShape.circle,
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    const Expanded(child: Text('Announcement Published & Synced!')),
-                  ],
+                Container(
+                  width: 12,
+                  height: 12,
+                  decoration: BoxDecoration(
+                    color: _selectedEventType.color,
+                    shape: BoxShape.circle,
+                  ),
                 ),
-                const SizedBox(height: 12),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.end,
-                  children: [
-                    TextButton(
-                      onPressed: () {
-                        ScaffoldMessenger.of(context).hideCurrentSnackBar();
-                      },
-                      style: TextButton.styleFrom(foregroundColor: Colors.white),
-                      child: const Text('DISMISS'),
-                    ),
-                    const SizedBox(width: 8),
-                    TextButton(
-                      onPressed: () async {
-                        ScaffoldMessenger.of(context).hideCurrentSnackBar();
-                        if (announcementId != null) {
-                          final result = await AnnouncementService.deleteAnnouncement(announcementId);
-                          if (result) {
-                            NotificationService.showLocalNotification(
-                              'Announcement Withdrawn',
-                              'Your recent announcement has been removed.',
-                              type: 'announcement_undo',
-                            );
-                          } else {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text('Unable to undo announcement on server.'),
-                                backgroundColor: Colors.red,
-                                behavior: SnackBarBehavior.floating,
-                              ),
-                            );
-                            return;
-                          }
-                        }
-                        final dayEvents = AppData.calendarEvents[day];
-                        dayEvents?.remove(eventData);
-                        if (dayEvents != null && dayEvents.isEmpty) {
-                          AppData.calendarEvents.remove(day);
-                        }
-                        if (mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text('Announcement undone.'),
-                              backgroundColor: Colors.orange,
-                              behavior: SnackBarBehavior.floating,
-                            ),
-                          );
-                        }
-                      },
-                      style: TextButton.styleFrom(foregroundColor: Colors.white),
-                      child: const Text('UNDO'),
-                    ),
-                  ],
-                ),
+                const SizedBox(width: 8),
+                const Text('Announcement Published & Synced!'),
               ],
             ),
             backgroundColor: Colors.green,
             behavior: SnackBarBehavior.floating,
             duration: const Duration(seconds: 6),
-            margin: const EdgeInsets.all(16),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            action: SnackBarAction(
+              label: 'UNDO',
+              textColor: Colors.white,
+              onPressed: () {
+                final dayEvents = AppData.calendarEvents[day];
+                dayEvents?.remove(eventData);
+                if (dayEvents != null && dayEvents.isEmpty) {
+                  AppData.calendarEvents.remove(day);
+                }
+                NotificationService.showLocalNotification(
+                  'Announcement Withdrawn',
+                  'Your recent announcement has been removed locally.',
+                  type: 'announcement_undo',
+                );
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Announcement undone.'),
+                      backgroundColor: Colors.orange,
+                      behavior: SnackBarBehavior.floating,
+                    ),
+                  );
+                }
+              },
+            ),
           ),
         );
-        Future.delayed(const Duration(seconds: 7), () {
-          if (mounted) {
-            Navigator.pop(context, true);
-          }
-        });
+        Navigator.pop(context);
       }
     } catch (e) {
       if (mounted) {

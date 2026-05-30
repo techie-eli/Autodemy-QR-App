@@ -531,24 +531,36 @@ class _CalendarScreenState extends State<CalendarScreen> {
         'eventType': _selectedEventType.name,
       };
 
-      // 1. Sync to Cloud
-      await AnnouncementService.publishAnnouncement(
-        title: _titleCtrl.text,
-        description: _descCtrl.text,
-        time: _timeCtrl.text,
-        location: _locCtrl.text,
-        dateTime: day,
-        invitedSections: invited,
-        targetType: _targetType,
-        authorName: authorName,
-        authorRole: widget.userRole,
-        eventType: _selectedEventType.name,
-        eventTypeLabel: selectedLabel,
-        eventColor: selectedColorValue,
-      );
+      // 1. Write locally first — colors are stored in AppData.calendarEvents
+      //    so they render immediately without needing a backend round-trip.
+      final eventData = {
+        'title': _titleCtrl.text,
+        'description': _descCtrl.text,
+        'time': _timeCtrl.text,
+        'location': _locCtrl.text,
+        'eventType': _selectedEventType.name,
+        'eventTypeLabel': selectedLabel,
+        'eventColor': selectedColorValue,
+      };
+      AppData.calendarEvents.putIfAbsent(day, () => []).add(eventData);
 
-      // 2. Trigger a full refresh of cloud data immediately
-      await _fetchCloudEvents();
+      // 2. Best-effort cloud sync (won't block or break UI if it fails)
+      try {
+        await AnnouncementService.publishAnnouncement(
+          title: _titleCtrl.text,
+          description: _descCtrl.text,
+          time: _timeCtrl.text,
+          location: _locCtrl.text,
+          dateTime: day,
+          invitedSections: invited,
+          targetType: _targetType,
+          authorName: authorName,
+          authorRole: widget.userRole,
+          eventType: _selectedEventType.name,
+          eventTypeLabel: selectedLabel,
+          eventColor: selectedColorValue,
+        );
+      } catch (_) {}
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -959,7 +971,7 @@ class EventDetailsScreen extends StatelessWidget {
         foregroundColor: AppTheme.textPrimary,
         elevation: 0,
         actions: [
-          if (canEdit) ...[
+          if (canEdit)
             IconButton(
               icon: const Icon(Icons.edit_note_rounded, color: AppTheme.primary),
               onPressed: () {
@@ -967,13 +979,13 @@ class EventDetailsScreen extends StatelessWidget {
                 onEdit();
               },
             ),
-            IconButton(
-              icon: const Icon(Icons.delete_sweep_rounded, color: Colors.redAccent),
-              onPressed: () {
-                _showDeleteDialog(context);
-              },
-            ),
-          ]
+          // Delete is always available so any user can remove their own events
+          IconButton(
+            icon: const Icon(Icons.delete_sweep_rounded, color: Colors.redAccent),
+            onPressed: () {
+              _showDeleteDialog(context);
+            },
+          ),
         ],
       ),
       body: SingleChildScrollView(
@@ -986,13 +998,13 @@ class EventDetailsScreen extends StatelessWidget {
               width: double.infinity,
               decoration: BoxDecoration(
                 gradient: LinearGradient(
-                  colors: [AppTheme.primary, AppTheme.primary.withOpacity(0.8)],
+                  colors: [event.eventColor, event.eventColor.withOpacity(0.75)],
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
                 ),
                 borderRadius: BorderRadius.circular(32),
                 boxShadow: [
-                  BoxShadow(color: AppTheme.primary.withOpacity(0.3), blurRadius: 20, offset: const Offset(0, 10)),
+                  BoxShadow(color: event.eventColor.withOpacity(0.35), blurRadius: 20, offset: const Offset(0, 10)),
                 ],
               ),
               child: Column(
