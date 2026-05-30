@@ -11,6 +11,12 @@ const attendanceSessionSchema = new mongoose.Schema({
     teacherId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
     subject: { type: String, required: true },
     section: { type: String, required: true },
+    academicYear: String,
+    strand: String,
+    level: String,
+    term: String,
+    termPhase: String,
+    sectionId: { type: mongoose.Schema.Types.ObjectId, ref: 'Section' },
     isEvent: { type: Boolean, default: false },
     isActive: { type: Boolean, default: true },
     

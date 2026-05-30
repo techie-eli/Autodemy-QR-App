@@ -367,15 +367,27 @@ app.post('/api/attendance/start', verifyToken, async (req, res) => {
             { subject, section, isActive: true },
             { isActive: false, endTime: new Date(), endReason: 'Auto-closed: New session started' }
         );
-        
-        const session = await AttendanceSession.create({
+
+        const sectionDoc = await Section.findOne({ sectionName: section, subject });
+        const sessionData = {
             teacherId,
             subject,
             section,
             isEvent,
             lateThresholdMinutes: lateThresholdMinutes || 5,
-            absentThresholdMinutes: absentThresholdMinutes || 10
-        });
+            absentThresholdMinutes: absentThresholdMinutes || 10,
+        };
+
+        if (sectionDoc) {
+            sessionData.academicYear = sectionDoc.academicYear;
+            sessionData.strand = sectionDoc.strand;
+            sessionData.level = sectionDoc.level;
+            sessionData.term = sectionDoc.term;
+            sessionData.termPhase = sectionDoc.termPhase;
+            sessionData.sectionId = sectionDoc._id;
+        }
+        
+        const session = await AttendanceSession.create(sessionData);
         res.json(session);
     } catch (err) {
         res.status(500).json({ message: err.message });
@@ -896,35 +908,57 @@ app.get('/api/student/section-info', verifyToken, async (req, res) => {
 app.get('/api/admin/attendance-history', verifyToken, async (req, res) => {
     if (req.userRole !== 'ADMIN') return res.status(403).json({ message: 'Forbidden' });
     try {
-        const { strand, grade, section, subject, academicYear } = req.query;
+        const { strand, grade, section, subject, academicYear, year, term, termPhase } = req.query;
+        const selectedYear = academicYear || year;
+
         let query = {};
         if (section) query.section = section;
         if (subject) query.subject = subject;
 
-        let sessions = await AttendanceSession.find(query).sort({ startTime: -1 }).populate('teacher', 'name');
+        const sessions = await AttendanceSession.find(query).sort({ startTime: -1 }).populate('teacher', 'name');
+        const filteredSessions = [];
+        const sectionCache = {};
 
-        if (strand || grade) {
-            // This is a simplified filter. For production, consider denormalization or aggregation.
-            const matchingSessions = [];
-            for (let session of sessions) {
-                const filteredRecords = [];
-                for (let record of session.records) {
-                    const student = await User.findById(record.studentId);
-                    if (!student) continue;
-                    if (strand && student.strand !== strand) continue;
-                    if (grade && student.grade !== grade) continue;
-                    filteredRecords.push(record);
+        for (const session of sessions) {
+            let matches = true;
+
+            if (selectedYear && session.academicYear && session.academicYear !== selectedYear) {
+                matches = false;
+            }
+            if (term && session.term && session.term !== term) {
+                matches = false;
+            }
+            if (termPhase && session.termPhase && session.termPhase !== termPhase) {
+                matches = false;
+            }
+            if (strand && session.strand && session.strand !== strand) {
+                matches = false;
+            }
+            if (grade && session.level && session.level !== grade) {
+                matches = false;
+            }
+
+            if ((selectedYear || term || termPhase || strand || grade) && (!session.academicYear || !session.term || !session.termPhase || !session.strand || !session.level)) {
+                const key = `${session.section}:${session.subject}`;
+                if (!sectionCache[key]) {
+                    sectionCache[key] = await Section.findOne({ sectionName: session.section, subject: session.subject });
                 }
-                if (filteredRecords.length > 0) {
-                    const sessionObj = session.toObject();
-                    sessionObj.records = filteredRecords;
-                    matchingSessions.push(sessionObj);
+                const sectionDoc = sectionCache[key];
+                if (sectionDoc) {
+                    if (selectedYear && sectionDoc.academicYear !== selectedYear) matches = false;
+                    if (term && sectionDoc.term !== term) matches = false;
+                    if (termPhase && sectionDoc.termPhase !== termPhase) matches = false;
+                    if (strand && sectionDoc.strand !== strand) matches = false;
+                    if (grade && sectionDoc.level !== grade) matches = false;
                 }
             }
-            sessions = matchingSessions;
+
+            if (matches) {
+                filteredSessions.push(session);
+            }
         }
 
-        res.json(sessions);
+        res.json(filteredSessions);
     } catch (err) {
         res.status(500).json({ message: err.message });
     }
@@ -1058,6 +1092,22 @@ app.get('/api/announcements', verifyToken, async (req, res) => {
             ]
         }).sort({ dateTime: -1 });
         res.json(announcements);
+    } catch (err) {
+        res.status(500).json({ message: err.message });
+    }
+});
+
+app.delete('/api/announcements/:id', verifyToken, async (req, res) => {
+    try {
+        if (req.userRole !== 'ADMIN' && req.userRole !== 'TEACHER') {
+            return res.status(403).json({ message: 'Forbidden' });
+        }
+        const announcement = await Announcement.findById(req.params.id);
+        if (!announcement) {
+            return res.status(404).json({ message: 'Announcement not found' });
+        }
+        await announcement.remove();
+        res.status(200).json({ message: 'Announcement deleted successfully' });
     } catch (err) {
         res.status(500).json({ message: err.message });
     }

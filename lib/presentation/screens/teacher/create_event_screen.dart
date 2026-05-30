@@ -599,7 +599,7 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
     final day = DateTime(_selectedDate.year, _selectedDate.month, _selectedDate.day);
 
     try {
-      await AnnouncementService.publishAnnouncement(
+      final announcementId = await AnnouncementService.publishAnnouncement(
         title: _titleController.text,
         description: _descController.text,
         time: _selectedTime.format(context),
@@ -672,17 +672,32 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
                     ),
                     const SizedBox(width: 8),
                     TextButton(
-                      onPressed: () {
+                      onPressed: () async {
+                        ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                        if (announcementId != null) {
+                          final result = await AnnouncementService.deleteAnnouncement(announcementId);
+                          if (result) {
+                            NotificationService.showLocalNotification(
+                              'Announcement Withdrawn',
+                              'Your recent announcement has been removed.',
+                              type: 'announcement_undo',
+                            );
+                          } else {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text('Unable to undo announcement on server.'),
+                                backgroundColor: Colors.red,
+                                behavior: SnackBarBehavior.floating,
+                              ),
+                            );
+                            return;
+                          }
+                        }
                         final dayEvents = AppData.calendarEvents[day];
                         dayEvents?.remove(eventData);
                         if (dayEvents != null && dayEvents.isEmpty) {
                           AppData.calendarEvents.remove(day);
                         }
-                        NotificationService.showLocalNotification(
-                          'Announcement Withdrawn',
-                          'Your recent announcement has been removed locally.',
-                          type: 'announcement_undo',
-                        );
                         if (mounted) {
                           ScaffoldMessenger.of(context).showSnackBar(
                             const SnackBar(

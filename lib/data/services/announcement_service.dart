@@ -5,7 +5,7 @@ import './notification_service.dart';
 class AnnouncementService {
   // Now using MongoDB Backend via ApiService
   
-  static Future<void> publishAnnouncement({
+  static Future<String?> publishAnnouncement({
     required String title,
     required String description,
     required String time,
@@ -29,7 +29,8 @@ class AnnouncementService {
     };
 
     // Assuming we have a /announcements/publish endpoint in our backend
-    await ApiService.post('/announcements/publish', data);
+    final response = await ApiService.post('/announcements/publish', data);
+    final announcementId = response is Map && response['_id'] != null ? response['_id'].toString() : null;
 
     // Also broadcast via Socket.io for real-time alerts
     String room = invitedSections.contains('ALL') ? 'ALL' : (invitedSections.isNotEmpty ? invitedSections.first : 'ALL');
@@ -39,6 +40,18 @@ class AnnouncementService {
       type: 'announcement',
       room: room,
     );
+
+    return announcementId;
+  }
+
+  static Future<bool> deleteAnnouncement(String announcementId) async {
+    try {
+      await ApiService.delete('/announcements/$announcementId');
+      return true;
+    } catch (e) {
+      print('Delete Announcement Error: $e');
+      return false;
+    }
   }
 
   static Future<List<Map<String, dynamic>>> getAnnouncements(String section) async {

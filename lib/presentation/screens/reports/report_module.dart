@@ -16,6 +16,8 @@ class _ReportModuleScreenState extends State<ReportModuleScreen> {
   String? _selectedYear;
   String? _selectedStrand;
   String? _selectedGrade;
+  String? _selectedTerm;
+  String? _selectedTermPhase;
   
   List<String> _academicYears = [];
   List<dynamic> _allSections = [];
@@ -23,6 +25,8 @@ class _ReportModuleScreenState extends State<ReportModuleScreen> {
   List<String> _dynamicStrands = [];
   bool _isLoadingData = true;
   final List<String> _grades = ['Grade 11', 'Grade 12'];
+  final List<String> _terms = ['1st Term', '2nd Term', '3rd Term'];
+  final List<String> _termPhases = ['Midterm', 'Endterm'];
 
   @override
   void initState() {
@@ -66,7 +70,9 @@ class _ReportModuleScreenState extends State<ReportModuleScreen> {
       _filteredSections = _allSections.where((s) {
         return s['academicYear'] == _selectedYear &&
                s['strand'] == _selectedStrand &&
-               s['level'] == _selectedGrade;
+               s['level'] == _selectedGrade &&
+               (_selectedTerm == null || s['term'] == _selectedTerm) &&
+               (_selectedTermPhase == null || s['termPhase'] == _selectedTermPhase);
       }).toList();
     });
   }
@@ -156,20 +162,51 @@ class _ReportModuleScreenState extends State<ReportModuleScreen> {
                         title: grade,
                         subtitle: 'Senior High School',
                         onTap: () {
-                          setState(() => _selectedGrade = grade);
+                          setState(() {
+                            _selectedGrade = grade;
+                            _selectedTerm = null;
+                            _selectedTermPhase = null;
+                            _filteredSections = [];
+                          });
+                        },
+                      )),
+                ] else if (_selectedTerm == null) ...[
+                  _buildSectionTitle('4. Select Term'),
+                  ..._terms.map((term) => ActionCard(
+                        icon: Icons.emoji_events_rounded,
+                        title: term,
+                        subtitle: 'Academic term',
+                        onTap: () {
+                          setState(() {
+                            _selectedTerm = term;
+                            _selectedTermPhase = null;
+                          });
+                          _filterSections();
+                        },
+                      )),
+                ] else if (_selectedTermPhase == null) ...[
+                  _buildSectionTitle('5. Select Term Phase'),
+                  ..._termPhases.map((phase) => ActionCard(
+                        icon: Icons.adjust_rounded,
+                        title: phase,
+                        subtitle: 'Term phase',
+                        onTap: () {
+                          setState(() {
+                            _selectedTermPhase = phase;
+                          });
                           _filterSections();
                         },
                       )),
                 ] else ...[
-                  _buildSectionTitle('4. Section List'),
+                  _buildSectionTitle('6. Section List'),
                   if (_filteredSections.isEmpty)
                     const Center(child: Padding(padding: EdgeInsets.all(20), child: Text('No sections found for this selection.', style: TextStyle(color: Colors.grey))))
                   else
                     ..._filteredSections.map((section) => ActionCard(
                           icon: Icons.class_rounded,
                           title: section['sectionName'] ?? 'Unknown Section',
-                          subtitle: '${section['subject'] ?? ''}',
-                          onTap: () => _generateReport(section['sectionName'] ?? ''),
+                          subtitle: '${section['subject'] ?? ''}${section['term'] != null ? ' • ${section['term']}${section['termPhase'] != null ? ' (${section['termPhase']})' : ''}' : ''}',
+                          onTap: () => _generateReport(section),
                         )),
                 ],
               ],
@@ -279,7 +316,7 @@ class _ReportModuleScreenState extends State<ReportModuleScreen> {
 
 
 
-  void _generateReport(String section) {
+  void _generateReport(Map<String, dynamic> sectionData) {
     Navigator.push(
       context,
       MaterialPageRoute(
@@ -287,7 +324,10 @@ class _ReportModuleScreenState extends State<ReportModuleScreen> {
           year: _selectedYear!,
           strand: _selectedStrand!,
           grade: _selectedGrade!,
-          section: section,
+          section: sectionData['sectionName'] ?? '',
+          term: sectionData['term']?.toString(),
+          termPhase: sectionData['termPhase']?.toString(),
+          subject: sectionData['subject']?.toString(),
           userRole: widget.userRole,
         ),
       ),
@@ -300,6 +340,9 @@ class SectionLogsDetailScreen extends StatefulWidget {
   final String strand;
   final String grade;
   final String section;
+  final String? term;
+  final String? termPhase;
+  final String? subject;
   final String? userRole;
 
   const SectionLogsDetailScreen({
@@ -308,6 +351,9 @@ class SectionLogsDetailScreen extends StatefulWidget {
     required this.strand,
     required this.grade,
     required this.section,
+    this.term,
+    this.termPhase,
+    this.subject,
     this.userRole,
   });
 
@@ -333,6 +379,8 @@ class _SectionLogsDetailScreenState extends State<SectionLogsDetailScreen> {
         strand: widget.strand,
         grade: widget.grade,
         section: widget.section,
+        term: widget.term,
+        termPhase: widget.termPhase,
       );
       if (mounted) {
         setState(() {

@@ -6,6 +6,8 @@ const sectionSchema = new mongoose.Schema({
     academicYear: { type: String, required: true }, // e.g. "2025-2026"
     strand: { type: String, required: true }, // e.g. "STEM"
     level: { type: String, required: true }, // e.g. "Grade 12"
+    term: { type: String }, // e.g. "1st Term"
+    termPhase: { type: String }, // e.g. "Midterm" or "Endterm"
     teacher: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
     students: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
     schedule: { type: String }, // e.g. "MWF 9:00 AM - 10:30 AM"

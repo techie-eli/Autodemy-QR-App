@@ -70,6 +70,16 @@ class ApiService {
     throw Exception('POST $endpoint failed: ${response.statusCode}');
   }
 
+  static Future<dynamic> delete(String endpoint) async {
+    final headers = await _getHeaders();
+    final response = await http.delete(Uri.parse('$baseUrl$endpoint'), headers: headers);
+    if (response.statusCode == 200 || response.statusCode == 204) {
+      if (response.body.isEmpty) return null;
+      return jsonDecode(response.body);
+    }
+    throw Exception('DELETE $endpoint failed: ${response.statusCode}');
+  }
+
   static Future<Map<String, dynamic>?> login(String username, String password) async {
     try {
       final response = await http.post(
@@ -682,6 +692,8 @@ class ApiService {
     String? strand,
     String? grade,
     String? section,
+    String? term,
+    String? termPhase,
   }) async {
     try {
       final queryParams = <String, String>{};
@@ -689,6 +701,8 @@ class ApiService {
       if (strand != null) queryParams['strand'] = strand;
       if (grade != null) queryParams['grade'] = grade;
       if (section != null) queryParams['section'] = section;
+      if (term != null) queryParams['term'] = term;
+      if (termPhase != null) queryParams['termPhase'] = termPhase;
 
       final uri = Uri.parse('$baseUrl/admin/attendance-history').replace(queryParameters: queryParams);
       final response = await http.get(uri, headers: await _getHeaders());

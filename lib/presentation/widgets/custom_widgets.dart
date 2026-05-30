@@ -508,10 +508,14 @@ class _AddSectionDialogState extends State<_AddSectionDialog> {
   TimeOfDay? _endTime;
   String? _selectedYear;
   String? _selectedLevel;
+  String? _selectedTerm;
+  String? _selectedTermPhase;
   bool _isLoading = false;
   List<String> _academicYears = [];
 
   final List<String> _levels = ['Grade 11', 'Grade 12'];
+  final List<String> _terms = ['1st Term', '2nd Term', '3rd Term'];
+  final List<String> _termPhases = ['Midterm', 'Endterm'];
 
   @override
   void initState() {
@@ -562,16 +566,33 @@ class _AddSectionDialogState extends State<_AddSectionDialog> {
   }
 
   void _handleSave() async {
-    if (!_formKey.currentState!.validate() || 
-        _subjectCtrl.text.trim().isEmpty || 
-        _strandCtrl.text.trim().isEmpty ||
-        _startTime == null || 
-        _endTime == null ||
-        _selectedYear == null || 
-        _selectedLevel == null) {
+    if (!_formKey.currentState!.validate()) {
       return;
     }
-    
+    if (_subjectCtrl.text.trim().isEmpty || _strandCtrl.text.trim().isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Please complete all section fields.'), backgroundColor: Colors.red),
+        );
+      }
+      return;
+    }
+    if (_startTime == null || _endTime == null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Please select both start and end times.'), backgroundColor: Colors.red),
+        );
+      }
+      return;
+    }
+    if (_selectedYear == null || _selectedLevel == null || _selectedTerm == null || _selectedTermPhase == null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Please select year, grade level, term, and term phase.'), backgroundColor: Colors.red),
+        );
+      }
+      return;
+    }
     setState(() => _isLoading = true);
     
     final scheduleStr = '${_formatTime(_startTime)} - ${_formatTime(_endTime)}';
@@ -583,6 +604,8 @@ class _AddSectionDialogState extends State<_AddSectionDialog> {
       'academicYear': _selectedYear,
       'strand': _strandCtrl.text.trim(),
       'level': _selectedLevel,
+      'term': _selectedTerm,
+      'termPhase': _selectedTermPhase,
       'schedule': scheduleStr,
     });
     
@@ -628,6 +651,7 @@ class _AddSectionDialogState extends State<_AddSectionDialog> {
                     items: _academicYears,
                     icon: Icons.calendar_today_rounded,
                     onChanged: (val) => setState(() => _selectedYear = val),
+                    validator: (val) => val == null ? 'Required' : null,
                   ),
                   const SizedBox(height: 16),
                   
@@ -637,9 +661,30 @@ class _AddSectionDialogState extends State<_AddSectionDialog> {
                     items: _levels,
                     icon: Icons.layers_rounded,
                     onChanged: (val) => setState(() => _selectedLevel = val),
+                    validator: (val) => val == null ? 'Required' : null,
                   ),
                   const SizedBox(height: 16),
-                  
+
+                  _buildDropdownField(
+                    hint: 'Select Term',
+                    value: _selectedTerm,
+                    items: _terms,
+                    icon: Icons.emoji_events_rounded,
+                    onChanged: (val) => setState(() => _selectedTerm = val),
+                    validator: (val) => val == null ? 'Required' : null,
+                  ),
+                  const SizedBox(height: 16),
+
+                  _buildDropdownField(
+                    hint: 'Select Term Phase',
+                    value: _selectedTermPhase,
+                    items: _termPhases,
+                    icon: Icons.adjust_rounded,
+                    onChanged: (val) => setState(() => _selectedTermPhase = val),
+                    validator: (val) => val == null ? 'Required' : null,
+                  ),
+                  const SizedBox(height: 16),
+
                   Container(
                     decoration: BoxDecoration(
                       color: Colors.white,
@@ -765,6 +810,7 @@ Widget _buildDropdownField({
   required List<String> items,
   required IconData icon,
   required Function(String?) onChanged,
+  String? Function(String?)? validator,
 }) {
   return DropdownButtonFormField<String>(
     value: value,
@@ -778,6 +824,7 @@ Widget _buildDropdownField({
     ),
     items: items.map((s) => DropdownMenuItem(value: s, child: Text(s))).toList(),
     onChanged: onChanged,
+    validator: validator,
   );
 }
 

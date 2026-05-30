@@ -30,7 +30,7 @@ class _GlobalConfigScreenState extends State<GlobalConfigScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Global Configuration'),
+        title: const Text('Configuration'),
         backgroundColor: AppTheme.primary,
         foregroundColor: Colors.white,
       ),
@@ -338,6 +338,12 @@ class _ManageAccountsScreenState extends State<ManageAccountsScreen> {
                     itemBuilder: (context, index) {
                       final u = filteredUsers[index];
                       // Prepare data for UI (mapping backend keys to UI keys if needed)
+                      final rawStatus = (u['status'] ?? '').toString();
+                      final statusLabel = rawStatus.isNotEmpty
+                          ? rawStatus.toUpperCase()
+                          : ((u['verified'] == true) ? 'ACTIVE' : 'UNVERIFIED');
+                      final statusColor = statusLabel == 'ACTIVE' ? Colors.green : Colors.red;
+
                       final Map<String, String> displayUser = {
                         'id_db': u['_id'] ?? '',
                         'name': u['name'] ?? 'No Name',
@@ -347,7 +353,7 @@ class _ManageAccountsScreenState extends State<ManageAccountsScreen> {
                         'assignedSubject': u['assignedSubject'] ?? 'No Subject',
                         'professor': u['professor'] ?? 'TBA',
                         'section': u['section'] ?? 'TBD',
-                        'status': 'Active',
+                        'status': statusLabel,
                       };
 
                       
@@ -439,17 +445,17 @@ class _ManageAccountsScreenState extends State<ManageAccountsScreen> {
                                    Container(
                                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
                                      decoration: BoxDecoration(
-                                       color: Colors.green.withOpacity(0.1),
+                                       color: (displayUser['status'] == 'ACTIVE' ? Colors.green : Colors.red).withOpacity(0.1),
                                        borderRadius: BorderRadius.circular(12),
                                      ),
                                      child: Text(
-                                       'ACTIVE', 
-                                       style: const TextStyle(
-                                         color: Colors.green,
+                                       displayUser['status']!, 
+                                       style: TextStyle(
+                                         color: displayUser['status'] == 'ACTIVE' ? Colors.green : Colors.red,
                                          fontSize: 10,
                                          fontWeight: FontWeight.w900,
-                                         letterSpacing: 0.8
-                                       )
+                                         letterSpacing: 0.8,
+                                       ),
                                      ),
                                    ),
                                    if (widget.userType == 'Student') ...[
@@ -489,6 +495,10 @@ class _ManageAccountsScreenState extends State<ManageAccountsScreen> {
   }
 
   void _showManagementMenu(BuildContext context, String targetName, bool isNew, [Map<String, String>? userData]) {
+    final accountStatus = userData?['status'] ?? 'UNVERIFIED';
+    final toggleLabel = accountStatus == 'ACTIVE' ? 'Mark Unverified' : 'Mark Active';
+    final toggleColor = accountStatus == 'ACTIVE' ? Colors.red : Colors.green;
+
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -573,6 +583,12 @@ class _ManageAccountsScreenState extends State<ManageAccountsScreen> {
                 }),
                 const SizedBox(height: 12),
               ],
+              _buildModernActionCard(Icons.sync_alt_rounded, toggleLabel, 'Switch account status tag', toggleColor, () async {
+                Navigator.pop(ctx);
+                final result = await _toggleAccountStatus(userData!['id_db']!, accountStatus, userData['name']!);
+                if (result == true) _fetchUsers();
+              }),
+              const SizedBox(height: 12),
               _buildModernActionCard(Icons.edit_rounded, 'Edit Details', 'Modify profile information', Colors.blue, () async {
                 Navigator.pop(ctx);
                 final result = await _showEditAccountDialog(context, widget.userType, userData!);
@@ -743,7 +759,7 @@ class _UserDetailScreenState extends State<UserDetailScreen> {
             else if (_teacherSections.isNotEmpty)
               ..._teacherSections.map((section) => _buildInfoCard(
                 section['subject'] ?? 'Unknown Subject', 
-                '${section['sectionName']} • ${section['strand'] ?? ''} (${section['academicYear'] ?? ''})', 
+                "${section['sectionName']} • ${section['strand'] ?? ''} (${section['academicYear'] ?? ''})${section['term'] != null ? ' • ${section['term']}${section['termPhase'] != null ? ' (${section['termPhase']})' : ''}' : ''}", 
                 Icons.science_rounded, 
                 Colors.blue,
                 onTap: () {
