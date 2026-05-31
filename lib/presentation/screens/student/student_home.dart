@@ -273,7 +273,7 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('UNDERSTOOD', style: TextStyle(fontWeight: FontWeight.bold)),
+            child: const Text('OKAY', style: TextStyle(fontWeight: FontWeight.bold)),
           ),
           ElevatedButton(
             onPressed: () {
