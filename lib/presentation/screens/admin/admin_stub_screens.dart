@@ -44,7 +44,19 @@ class _GlobalConfigScreenState extends State<GlobalConfigScreen> {
           _buildToggleTile('Allow Late Attendance (Grace Period)', _gracePeriod, (v) => setState(() => _gracePeriod = v)),
           
           const SizedBox(height: 16),
-          
+          Container(
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: Colors.grey.shade200),
+            ),
+            child: ListTile(
+              leading: const Icon(Icons.lock_clock, color: AppTheme.primary),
+              title: const Text('Session Timeout', style: TextStyle(fontWeight: FontWeight.bold)),
+              subtitle: const Text('Automatically log out inactive admin users after 15 minutes'),
+            ),
+          ),
+          const SizedBox(height: 16),
           _buildEditableThreshold('Late Threshold (Minutes)', _lateCtrl, Icons.timer_outlined),
           const SizedBox(height: 16),
           _buildEditableThreshold('Absent Threshold (Minutes)', _absentCtrl, Icons.timer_off_outlined),
@@ -58,12 +70,26 @@ class _GlobalConfigScreenState extends State<GlobalConfigScreen> {
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
               elevation: 4,
             ),
-            onPressed: () {
-              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-                content: Text('Configuration saved successfully!'),
-                behavior: SnackBarBehavior.floating,
-                backgroundColor: AppTheme.success,
-              ));
+            onPressed: () async {
+              final lateThreshold = int.tryParse(_lateCtrl.text) ?? 15;
+              final absentThreshold = int.tryParse(_absentCtrl.text) ?? 30;
+              final success = await ApiService.saveAdminSettings({
+                'fingerprintEnabled': _fingerprint,
+                'gracePeriodEnabled': _gracePeriod,
+                'lateThresholdMinutes': lateThreshold,
+                'absentThresholdMinutes': absentThreshold,
+                'sessionTimeoutMinutes': 15,
+              });
+
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text(success
+                      ? 'Configuration saved successfully!'
+                      : 'Unable to save configuration. Try again.'),
+                  behavior: SnackBarBehavior.floating,
+                  backgroundColor: success ? AppTheme.success : AppTheme.error,
+                ),
+              );
             },
             child: const Text('SAVE CHANGES', style: TextStyle(fontWeight: FontWeight.bold, letterSpacing: 1)),
           ),

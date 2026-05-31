@@ -24,6 +24,8 @@ class LoginScreen extends StatefulWidget {
 class _LoginScreenState extends State<LoginScreen> {
   final TextEditingController _usernameController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
+  final TextEditingController _schoolIdController = TextEditingController();
+  final TextEditingController _verificationCodeController = TextEditingController();
   bool _isLoading = false;
   bool _obscurePassword = true;
 
@@ -60,6 +62,11 @@ class _LoginScreenState extends State<LoginScreen> {
         // 2. Fetch User Profile from our Node.js Backend
         final loginResponse = await ApiService.login(inputEmail, inputPass);
         if (loginResponse != null) {
+          if (loginResponse['error'] == ApiService.kErrDeviceVerificationRequired) {
+            await _promptDeviceVerification(inputEmail, inputPass);
+            return;
+          }
+
           final userData = loginResponse['user'];
           final role = userData['role'];
 
@@ -131,6 +138,147 @@ class _LoginScreenState extends State<LoginScreen> {
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
       ),
     );
+  }
+
+  void _showMessage(String msg) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(msg),
+        backgroundColor: AppTheme.primary,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      ),
+    );
+  }
+
+  Future<void> _promptDeviceVerification(String email, String password) async {
+    _schoolIdController.clear();
+    _verificationCodeController.clear();
+
+    await showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Verify Unfamiliar Device'),
+          content: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const Text('Enter your school ID number to receive a verification code by email.'),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: _schoolIdController,
+                  decoration: const InputDecoration(labelText: 'School ID Number'),
+                ),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: _verificationCodeController,
+                  decoration: const InputDecoration(labelText: 'Verification Code (OTP)'),
+                  keyboardType: TextInputType.number,
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () { Navigator.of(context).pop(); },
+              child: const Text('CANCEL'),
+            ),
+            TextButton(
+              onPressed: () async {
+                final idNumber = _schoolIdController.text.trim();
+                if (idNumber.isEmpty) {
+                  _showError('Please enter your school ID number.');
+                  return;
+                }
+                final result = await ApiService.sendDeviceVerificationCode(email, idNumber);
+                if (result['success'] == true) {
+                  _showMessage(result['message'] ?? 'Verification code sent.');
+                } else {
+                  _showError(result['message'] ?? 'Unable to send verification code.');
+                }
+              },
+              child: const Text('SEND CODE'),
+            ),
+            TextButton(
+              onPressed: () async {
+                final idNumber = _schoolIdController.text.trim();
+                final code = _verificationCodeController.text.trim();
+                if (idNumber.isEmpty || code.isEmpty) {
+                  _showError('Enter both school ID and verification code to continue.');
+                  return;
+                }
+                Navigator.of(context).pop();
+                await _verifyDeviceAndLogin(email, password, idNumber, code);
+              },
+              child: const Text('VERIFY & LOGIN'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Future<void> _verifyDeviceAndLogin(String email, String password, String idNumber, String code) async {
+    setState(() => _isLoading = true);
+    try {
+      final verifyResponse = await ApiService.verifyDeviceCode(
+        email: email,
+        idNumber: idNumber,
+        code: code,
+      );
+
+      if (verifyResponse['success'] == true) {
+        final loginResponse = await ApiService.login(email, password, verificationCode: code);
+        if (loginResponse != null && loginResponse['user'] != null) {
+          final userData = loginResponse['user'];
+          final role = userData['role'];
+
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.setString('user_data', jsonEncode(userData));
+
+          bool isEnabled = false;
+          final userId = userData['id']?.toString();
+          final userName = userData['name']?.toString();
+          if (userId != null) {
+            isEnabled = prefs.getBool('biometric_enabled_$userId') ?? false;
+          }
+          if (!isEnabled && userName != null) {
+            isEnabled = prefs.getBool('biometric_enabled_$userName') ?? false;
+          }
+
+          AppData.isLocked.value = false;
+          AppData.biometricEnabled.value = isEnabled;
+          AppData.currentUserName.value = userData['name']?.toString() ?? '';
+
+          if (!mounted) return;
+          if (role == 'ADMIN') {
+            Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => const AdminHomeScreen()));
+          } else if (role == 'TEACHER') {
+            Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(builder: (_) => TeacherHomeScreen(
+                teacherId: userData['id'].toString(),
+                teacherName: userData['name'].toString(),
+              )),
+            );
+          } else if (role == 'STUDENT') {
+            final student = Student.fromMap(userData);
+            Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(builder: (_) => StudentHomeScreen(student: student)),
+            );
+          }
+          return;
+        }
+      }
+
+      _showError(verifyResponse['message']?.toString() ?? 'Verification failed.');
+    } catch (e) {
+      _showError('Device verification failed: $e');
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
   }
 
   String _loginErrorMessage(FirebaseAuthException e) {

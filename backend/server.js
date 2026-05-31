@@ -10,6 +10,7 @@ const admin = require('firebase-admin');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
+const nodemailer = require('nodemailer');
 
 // Initialize Firebase Admin
 let serviceAccount;
@@ -81,6 +82,7 @@ const Section = require('./models/Section');
 const AcademicYear = require('./models/AcademicYear');
 const Concern = require('./models/Concern');
 const Message = require('./models/Message');
+const AuditLog = require('./models/AuditLog');
 
 // New Announcement Model
 const announcementSchema = new mongoose.Schema({
@@ -93,9 +95,57 @@ const announcementSchema = new mongoose.Schema({
     targetType: String,
     authorName: String,
     authorRole: String,
+    eventType: String,
+    eventTypeLabel: String,
+    eventColor: Number,
     createdAt: { type: Date, default: Date.now }
 });
 const Announcement = mongoose.model('Announcement', announcementSchema);
+
+const smtpAvailable = !!process.env.SMTP_HOST && !!process.env.SMTP_USER && !!process.env.SMTP_PASS && !!process.env.SMTP_FROM;
+const transporter = smtpAvailable ? nodemailer.createTransport({
+    host: process.env.SMTP_HOST,
+    port: Number(process.env.SMTP_PORT || 587),
+    secure: process.env.SMTP_SECURE === 'true',
+    auth: {
+        user: process.env.SMTP_USER,
+        pass: process.env.SMTP_PASS,
+    },
+}) : null;
+
+async function sendEmail(dest, subject, html) {
+    if (!transporter) {
+        console.warn('SMTP transporter is not configured. Email not sent.');
+        return false;
+    }
+    try {
+        await transporter.sendMail({
+            from: process.env.SMTP_FROM,
+            to: dest,
+            subject,
+            html,
+        });
+        return true;
+    } catch (err) {
+        console.error('SMTP send error:', err);
+        return false;
+    }
+}
+
+async function recordAuditLog({actionType, actorId, actorName, targetType, targetId, details}) {
+    try {
+        await AuditLog.create({
+            actionType,
+            actorId,
+            actorName,
+            targetType,
+            targetId,
+            details,
+        });
+    } catch (err) {
+        console.error('Audit log error:', err);
+    }
+}
 
 // Socket.io Logic
 io.on('connection', (socket) => {
@@ -257,17 +307,70 @@ app.post('/api/auth/register', async (req, res) => {
 });
 
 app.post('/api/auth/login', async (req, res) => {
-    const { username, password } = req.body;
+    const {
+        username,
+        password,
+        deviceId,
+        devicePlatform = 'mobile',
+        deviceLimit = 2,
+        verificationCode,
+    } = req.body;
+
     try {
         // Search by email OR username so both work
         const user = await User.findOne({ $or: [{ username }, { email: username }] });
         if (!user) return res.status(401).json({ message: 'Invalid credentials' });
-        
+
         const isMatch = await user.comparePassword(password);
         if (!isMatch) return res.status(401).json({ message: 'Invalid credentials' });
 
+        const isKnownDevice = deviceId && user.devices.includes(deviceId);
+        const isWebLogin = devicePlatform === 'web';
+
+        if (isWebLogin && deviceId && !isKnownDevice) {
+            const stillValid = user.deviceVerificationCode && user.verificationCodeExpiresAt && new Date(user.verificationCodeExpiresAt) > new Date();
+            if (!verificationCode || verificationCode !== user.deviceVerificationCode || !stillValid) {
+                return res.status(403).json({
+                    error: 'verification_required',
+                    message: 'Unfamiliar web device detected. Please verify your email before signing in.',
+                });
+            }
+        }
+
+        if (deviceId) {
+            // Remove any duplicate entries that may have crept in
+            user.devices = [...new Set(user.devices)];
+
+            if (!user.devices.includes(deviceId)) {
+                if (user.devices.length >= deviceLimit) {
+                    return res.status(403).json({
+                        error: 'device_limit_reached',
+                        message: `This account is already logged in on ${deviceLimit} devices. Please log out from another device first.`,
+                    });
+                }
+
+                const oldDevices = [...user.devices];
+                user.devices.push(deviceId);
+                user.deviceVerificationCode = undefined;
+                user.verificationCodeExpiresAt = undefined;
+                user.pendingDeviceId = undefined;
+                user.pendingDevicePlatform = undefined;
+
+                await user.save();
+
+                await recordAuditLog({
+                    actionType: 'DEVICE_REGISTERED',
+                    actorId: user._id,
+                    actorName: user.name,
+                    targetType: 'User',
+                    targetId: user._id.toString(),
+                    details: `New device registered: ${deviceId} (${devicePlatform}). Previous devices: ${oldDevices.join(', ') || 'none'}`,
+                });
+            }
+        }
+
         const token = jwt.sign({ id: user._id, role: user.role }, process.env.JWT_SECRET, { expiresIn: '24h' });
-        
+
         res.json({
             token,
             user: {
@@ -279,9 +382,165 @@ app.post('/api/auth/login', async (req, res) => {
                 section: user.section,
                 subjects: user.subjects,
                 assignedSubject: user.assignedSubject,
-                assignedTime: user.assignedTime
+                assignedTime: user.assignedTime,
             }
         });
+    } catch (err) {
+        res.status(500).json({ message: err.message });
+    }
+});
+
+app.post('/api/auth/send-verification', async (req, res) => {
+    try {
+        const { email, name } = req.body;
+        if (!email) return res.status(400).json({ message: 'Email is required.' });
+
+        const verificationMessage = `Hello ${name ?? 'Autodemy User'},<br/><br/>` +
+            'Please confirm your email address by clicking the verification link sent by Firebase, or verify your account using the app.<br/><br/>' +
+            'If you did not request this, please ignore this email.<br/><br/>Thanks,<br/>Autodemy Team';
+
+        const emailSent = await sendEmail(email, 'Verify Your Autodemy Email', verificationMessage);
+        await recordAuditLog({
+            actionType: 'VERIFICATION_EMAIL_SENT',
+            actorId: null,
+            actorName: name || 'System',
+            targetType: 'User',
+            targetId: email,
+            details: `Verification email requested for ${email}. SMTP sent: ${emailSent}`,
+        });
+
+        return res.status(200).json({ message: 'Verification email requested.', emailSent });
+    } catch (err) {
+        console.error('Send Verification Error:', err);
+        res.status(500).json({ message: err.message });
+    }
+});
+
+app.post('/api/auth/send-device-verification', async (req, res) => {
+    try {
+        const { email, idNumber, deviceId, devicePlatform = 'web' } = req.body;
+        if (!email || !idNumber || !deviceId) {
+            return res.status(400).json({ message: 'Email, ID number, and deviceId are required.' });
+        }
+
+        const user = await User.findOne({ email, idNumber });
+        if (!user) return res.status(404).json({ message: 'Student not found with provided credentials.' });
+
+        const code = Math.floor(100000 + Math.random() * 900000).toString();
+        user.deviceVerificationCode = code;
+        user.verificationCodeExpiresAt = new Date(Date.now() + 10 * 60 * 1000);
+        user.pendingDeviceId = deviceId;
+        user.pendingDevicePlatform = devicePlatform;
+        await user.save();
+
+        const html = `Hello ${user.name},<br/><br/>Your Autodemy device verification code is: <strong>${code}</strong><br/><br/>` +
+            'Enter this code in the app to complete device registration for your account. This code expires in 10 minutes.<br/><br/>If you did not request this, contact your administrator immediately.';
+        const emailSent = await sendEmail(user.email, 'Autodemy Device Verification Code', html);
+
+        await recordAuditLog({
+            actionType: 'DEVICE_VERIFICATION_CODE_SENT',
+            actorId: user._id,
+            actorName: user.name,
+            targetType: 'User',
+            targetId: user._id.toString(),
+            details: `Device verification code sent to ${user.email} for device ${deviceId} (${devicePlatform}). SMTP sent: ${emailSent}`,
+        });
+
+        res.status(200).json({ message: 'Verification code sent to registered email.', emailSent });
+    } catch (err) {
+        console.error('Send Device Verification Error:', err);
+        res.status(500).json({ message: err.message });
+    }
+});
+
+app.post('/api/auth/verify-device-code', async (req, res) => {
+    try {
+        const { email, idNumber, deviceId, devicePlatform = 'web', verificationCode, deviceLimit = 2 } = req.body;
+        if (!email || !idNumber || !deviceId || !verificationCode) {
+            return res.status(400).json({ message: 'Email, ID number, deviceId, and verificationCode are required.' });
+        }
+
+        const user = await User.findOne({ email, idNumber });
+        if (!user) return res.status(404).json({ message: 'Student not found with provided credentials.' });
+
+        const stillValid = user.deviceVerificationCode && user.verificationCodeExpiresAt && new Date(user.verificationCodeExpiresAt) > new Date();
+        if (!stillValid || verificationCode !== user.deviceVerificationCode) {
+            return res.status(403).json({ message: 'Invalid or expired verification code.' });
+        }
+
+        user.devices = [...new Set(user.devices || [])];
+        if (!user.devices.includes(deviceId)) {
+            if (user.devices.length >= deviceLimit) {
+                return res.status(403).json({ message: 'Device registration limit reached. Contact administrator to remove an old device.' });
+            }
+            const oldDevices = [...user.devices];
+            user.devices.push(deviceId);
+            user.deviceVerificationCode = undefined;
+            user.verificationCodeExpiresAt = undefined;
+            user.pendingDeviceId = undefined;
+            user.pendingDevicePlatform = undefined;
+            await user.save();
+
+            await recordAuditLog({
+                actionType: 'DEVICE_REGISTERED',
+                actorId: user._id,
+                actorName: user.name,
+                targetType: 'User',
+                targetId: user._id.toString(),
+                details: `Verified and registered new device ${deviceId} (${devicePlatform}). Previous devices: ${oldDevices.join(', ') || 'none'}`,
+            });
+        }
+
+        res.json({ message: 'Device verified and registered successfully.' });
+    } catch (err) {
+        console.error('Verify Device Code Error:', err);
+        res.status(500).json({ message: err.message });
+    }
+});
+
+// Remove this device from the user's registered devices on logout
+// so the slot is freed up for another device.
+app.post('/api/auth/logout-device', verifyToken, async (req, res) => {
+    try {
+        const { deviceId } = req.body;
+        if (!deviceId) return res.status(400).json({ message: 'deviceId required' });
+        await User.findByIdAndUpdate(req.userId, { $pull: { devices: deviceId } });
+        res.json({ message: 'Device removed successfully' });
+    } catch (err) {
+        res.status(500).json({ message: err.message });
+    }
+});
+
+// Admin: clear all registered devices for a user
+// (useful when a user loses their phone and can't log out)
+app.post('/api/admin/users/:userId/clear-devices', verifyToken, async (req, res) => {
+    if (req.userRole !== 'ADMIN') return res.status(403).json({ message: 'Forbidden' });
+    try {
+        const { idNumber, reason } = req.body;
+        if (!idNumber) {
+            return res.status(400).json({ message: 'Student ID number is required for device reset.' });
+        }
+
+        const user = await User.findById(req.params.userId);
+        if (!user) return res.status(404).json({ message: 'User not found.' });
+        if (user.idNumber !== idNumber) {
+            return res.status(400).json({ message: 'Student ID number does not match.' });
+        }
+
+        const previousDevices = [...user.devices];
+        user.devices = [];
+        await user.save();
+
+        await recordAuditLog({
+            actionType: 'DEVICE_RESET',
+            actorId: req.userId,
+            actorName: 'Administrator',
+            targetType: 'User',
+            targetId: user._id.toString(),
+            details: `Admin cleared devices for ${user.name}. Previous devices: ${previousDevices.join(', ') || 'none'}. Reason: ${reason || 'Not specified'}`,
+        });
+
+        res.json({ message: 'All devices cleared for user' });
     } catch (err) {
         res.status(500).json({ message: err.message });
     }
@@ -711,8 +970,29 @@ app.put('/api/users/me', verifyToken, async (req, res) => {
 app.get('/api/admin/logs', verifyToken, async (req, res) => {
     if (req.userRole !== 'ADMIN') return res.status(403).json({ message: 'Forbidden' });
     try {
-        const sessions = await AttendanceSession.find().sort({ startTime: -1 }).limit(50);
-        res.json(sessions);
+        const sessions = await AttendanceSession.find()
+            .populate('teacherId', 'name')
+            .sort({ startTime: -1 })
+            .limit(50);
+        const enriched = sessions.map((session) => {
+            const obj = session.toObject({ getters: true, virtuals: false });
+            return {
+                ...obj,
+                teacherName: session.teacherId?.name || obj.teacherName || obj.teacher || 'Unknown Teacher',
+            };
+        });
+        res.json(enriched);
+    } catch (err) {
+        res.status(500).json({ message: err.message });
+    }
+});
+
+// Admin: Get audit log entries
+app.get('/api/admin/audit-logs', verifyToken, async (req, res) => {
+    if (req.userRole !== 'ADMIN') return res.status(403).json({ message: 'Forbidden' });
+    try {
+        const auditLogs = await AuditLog.find().sort({ createdAt: -1 }).limit(100);
+        res.json(auditLogs);
     } catch (err) {
         res.status(500).json({ message: err.message });
     }

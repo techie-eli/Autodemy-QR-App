@@ -1,6 +1,9 @@
 import 'dart:convert';
+import 'dart:io' show Platform;
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:device_info_plus/device_info_plus.dart';
 import '../../core/config/app_config.dart';
 
 class ApiService {
@@ -87,29 +90,106 @@ class ApiService {
     throw Exception('PUT $endpoint failed: ${response.statusCode}');
   }
 
-  static Future<Map<String, dynamic>?> login(String username, String password) async {
+  // ─── Device ID ────────────────────────────────────────────────────────────
+
+  /// Returns a stable unique identifier for this device/browser.
+  static Future<String> getDeviceId() async {
+    final prefs = await SharedPreferences.getInstance();
+    // Check for a previously stored ID first (covers web + any platform)
+    final stored = prefs.getString('device_id');
+    if (stored != null && stored.isNotEmpty) return stored;
+
+    String deviceId;
+
+    if (kIsWeb) {
+      // Web: generate a UUID and persist it in SharedPreferences
+      deviceId = _generateUuid();
+    } else if (Platform.isAndroid) {
+      final info = await DeviceInfoPlugin().androidInfo;
+      deviceId = info.id; // stable Android hardware ID
+    } else if (Platform.isIOS) {
+      final info = await DeviceInfoPlugin().iosInfo;
+      deviceId = info.identifierForVendor ?? _generateUuid();
+    } else {
+      deviceId = _generateUuid();
+    }
+
+    await prefs.setString('device_id', deviceId);
+    return deviceId;
+  }
+
+  /// Simple UUID v4 generator (no external package needed).
+  static String _generateUuid() {
+    const chars = '0123456789abcdef';
+    final buf = StringBuffer();
+    for (var i = 0; i < 32; i++) {
+      if (i == 8 || i == 12 || i == 16 || i == 20) buf.write('-');
+      buf.write(chars[(DateTime.now().microsecondsSinceEpoch + i * 7) % 16]);
+    }
+    return buf.toString();
+  }
+
+  // ─── Login (with device-limit check) ──────────────────────────────────────
+
+  /// Login result type — lets the caller distinguish a device-limit block
+  /// from a wrong-password failure without parsing error strings.
+  static const String kErrDeviceLimit = 'DEVICE_LIMIT_REACHED';
+  static const String kErrDeviceVerificationRequired = 'DEVICE_VERIFICATION_REQUIRED';
+  static const int deviceLimit = 2;
+
+  /// Returns the response map on success, or a map with key 'error' on failure.
+  /// Callers should check: if (result?['error'] == ApiService.kErrDeviceLimit)
+  static Future<Map<String, dynamic>?> login(String username, String password, {String? verificationCode}) async {
     try {
+      final deviceId = await getDeviceId();
+      final devicePlatform = kIsWeb ? 'web' : 'mobile';
+
       final response = await http.post(
         Uri.parse('$baseUrl/auth/login'),
         headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({'username': username, 'password': password}),
+        body: jsonEncode({
+          'username': username,
+          'password': password,
+          'deviceId': deviceId,
+          'devicePlatform': devicePlatform,
+          'deviceLimit': deviceLimit,
+          if (verificationCode != null) 'verificationCode': verificationCode,
+        }),
       );
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
-        if (data['token'] != null) {
-          await setToken(data['token']);
-        }
-        if (data['user'] != null) {
-          await saveUserData(data['user']);
-        }
+        if (data['token'] != null) await setToken(data['token']);
+        if (data['user'] != null) await saveUserData(data['user']);
         return data;
       }
+
+      if (response.statusCode == 403) {
+        final body = jsonDecode(response.body);
+        final errorText = (body['error'] ?? '').toString();
+        if (errorText.contains('device_limit_reached')) {
+          return {'error': kErrDeviceLimit, 'message': body['message'] ?? 'Device limit reached.'};
+        }
+        if (errorText.contains('verification_required')) {
+          return {'error': kErrDeviceVerificationRequired, 'message': body['message'] ?? 'Device verification required.'};
+        }
+      }
+
       return null;
     } catch (e) {
       print('Login Error: $e');
       return null;
     }
+  }
+
+  /// Removes this device from the user's registered devices on the backend.
+  /// Call this on logout so the slot is freed up.
+  static Future<void> logoutDevice() async {
+    try {
+      final deviceId = await getDeviceId();
+      await post('/auth/logout-device', {'deviceId': deviceId});
+    } catch (_) {}
+    await clearToken();
   }
 
   static Future<bool> updateProfile(String newName) async {
@@ -328,6 +408,92 @@ class ApiService {
     }
   }
 
+  static Future<Map<String, dynamic>> sendDeviceVerificationCode(String email, String idNumber) async {
+    try {
+      final deviceId = await getDeviceId();
+      final devicePlatform = kIsWeb ? 'web' : 'mobile';
+
+      final response = await http.post(
+        Uri.parse('$baseUrl/auth/send-device-verification'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'email': email,
+          'idNumber': idNumber,
+          'deviceId': deviceId,
+          'devicePlatform': devicePlatform,
+        }),
+      ).timeout(const Duration(seconds: 10));
+
+      final data = response.body.isNotEmpty ? jsonDecode(response.body) : {};
+      return {
+        'success': response.statusCode == 200,
+        'message': data is Map && data['message'] != null ? data['message'] : 'Unable to send device verification code.'
+      };
+    } catch (e) {
+      print('Send Device Verification Code Error: $e');
+      return {
+        'success': false,
+        'message': e.toString(),
+      };
+    }
+  }
+
+  static Future<Map<String, dynamic>> verifyDeviceCode({
+    required String email,
+    required String idNumber,
+    required String code,
+  }) async {
+    try {
+      final deviceId = await getDeviceId();
+      final devicePlatform = kIsWeb ? 'web' : 'mobile';
+
+      final response = await http.post(
+        Uri.parse('$baseUrl/auth/verify-device-code'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'email': email,
+          'idNumber': idNumber,
+          'deviceId': deviceId,
+          'devicePlatform': devicePlatform,
+          'verificationCode': code,
+        }),
+      ).timeout(const Duration(seconds: 10));
+
+      final data = response.body.isNotEmpty ? jsonDecode(response.body) : {};
+      if (response.statusCode == 200) {
+        return data;
+      }
+      return {
+        'success': false,
+        'message': data is Map && data['message'] != null ? data['message'] : 'Verification failed.'
+      };
+    } catch (e) {
+      print('Verify Device Code Error: $e');
+      return {
+        'success': false,
+        'message': e.toString(),
+      };
+    }
+  }
+
+  static Future<bool> clearStudentDevices(String userId, String idNumber, {String? reason}) async {
+    try {
+      final response = await http.post(
+        Uri.parse('$baseUrl/admin/users/$userId/clear-devices'),
+        headers: await _getHeaders(),
+        body: jsonEncode({
+          'idNumber': idNumber,
+          if (reason != null) 'reason': reason,
+        }),
+      ).timeout(const Duration(seconds: 10));
+
+      return response.statusCode == 200;
+    } catch (e) {
+      print('Clear Student Devices Error: $e');
+      return false;
+    }
+  }
+
   static Future<List<dynamic>> getAllUsers() async {
     try {
       final response = await http.get(
@@ -416,6 +582,22 @@ class ApiService {
       return [];
     } catch (e) {
       print('Get Logs Error: $e');
+      return [];
+    }
+  }
+
+  static Future<List<dynamic>> getAuditLogs() async {
+    try {
+      final response = await http.get(
+        Uri.parse('$baseUrl/admin/audit-logs'),
+        headers: await _getHeaders(),
+      );
+      if (response.statusCode == 200) {
+        return jsonDecode(response.body);
+      }
+      return [];
+    } catch (e) {
+      print('Get Audit Logs Error: $e');
       return [];
     }
   }
@@ -721,6 +903,22 @@ class ApiService {
     } catch (e) {
       print('Granular Attendance Error: $e');
       return [];
+    }
+  }
+
+  /// Save global/admin configuration settings on the backend.
+  /// Returns `true` when the backend acknowledges the update.
+  static Future<bool> saveAdminSettings(Map<String, dynamic> settings) async {
+    try {
+      final response = await http.put(
+        Uri.parse('$baseUrl/admin/settings'),
+        headers: await _getHeaders(),
+        body: jsonEncode(settings),
+      );
+      return response.statusCode == 200 || response.statusCode == 201;
+    } catch (e) {
+      print('Save Admin Settings Error: $e');
+      return false;
     }
   }
 }

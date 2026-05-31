@@ -1,4 +1,5 @@
 import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:async';
@@ -15,6 +16,7 @@ import 'data/app_data.dart';
 import 'firebase_options.dart';
 
 final GlobalKey<ScaffoldMessengerState> scaffoldMessengerKey = GlobalKey<ScaffoldMessengerState>();
+final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -173,16 +175,58 @@ class AutodemyApp extends StatefulWidget {
 }
 
 class _AutodemyAppState extends State<AutodemyApp> with WidgetsBindingObserver {
+  Timer? _idleTimer;
+  String? _currentUserRole;
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    _loadCurrentUserRole();
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _idleTimer?.cancel();
     super.dispose();
+  }
+
+  Future<void> _loadCurrentUserRole() async {
+    final prefs = await SharedPreferences.getInstance();
+    final userJson = prefs.getString('user_data');
+    if (!mounted) return;
+
+    if (userJson != null) {
+      final userData = jsonDecode(userJson) as Map<String, dynamic>;
+      setState(() {
+        _currentUserRole = userData['role']?.toString();
+      });
+    }
+
+    _resetIdleTimer();
+  }
+
+  void _resetIdleTimer() {
+    _idleTimer?.cancel();
+
+    if ((_currentUserRole ?? '').toUpperCase() == 'ADMIN') {
+      _idleTimer = Timer(const Duration(minutes: 15), _handleAdminTimeout);
+    }
+  }
+
+  Future<void> _handleAdminTimeout() async {
+    await FirebaseAuth.instance.signOut();
+    await ApiService.clearToken();
+
+    final ctx = navigatorKey.currentState?.context;
+    if (ctx != null) {
+      Navigator.pushAndRemoveUntil(
+        ctx,
+        MaterialPageRoute(builder: (_) => const SplashScreen()),
+        (_) => false,
+      );
+    }
   }
 
   @override
@@ -208,23 +252,36 @@ class _AutodemyAppState extends State<AutodemyApp> with WidgetsBindingObserver {
           valueListenable: AppData.isLocked,
           builder: (context, isLocked, child) {
             return MaterialApp(
+              navigatorKey: navigatorKey,
               debugShowCheckedModeBanner: false,
               scaffoldMessengerKey: scaffoldMessengerKey,
               title: 'Autodemy',
               theme: AppTheme.lightTheme,
-              home: const SplashScreen(),
+              home: GestureDetector(
+                behavior: HitTestBehavior.translucent,
+                onTap: _resetIdleTimer,
+                onPanDown: (_) => _resetIdleTimer(),
+                child: const SplashScreen(),
+              ),
               builder: (context, child) {
-                if (isEnabled && child != null) {
-                  return BiometricLockScreen(
-                    key: const ValueKey('biometric_lock'),
-                    isLocked: isLocked,
-                    onUnlocked: () {
-                      AppData.isLocked.value = false;
-                    },
-                    child: child,
-                  );
-                }
-                return child ?? const SizedBox.shrink();
+                final wrappedChild = child ?? const SizedBox.shrink();
+                final screen = isEnabled
+                    ? BiometricLockScreen(
+                        key: const ValueKey('biometric_lock'),
+                        isLocked: isLocked,
+                        onUnlocked: () {
+                          AppData.isLocked.value = false;
+                        },
+                        child: wrappedChild,
+                      )
+                    : wrappedChild;
+
+                return GestureDetector(
+                  behavior: HitTestBehavior.translucent,
+                  onTap: _resetIdleTimer,
+                  onPanDown: (_) => _resetIdleTimer(),
+                  child: screen,
+                );
               },
             );
           }

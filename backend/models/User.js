@@ -10,10 +10,10 @@ const userSchema = new mongoose.Schema({
     status: { type: String, enum: ['UNVERIFIED', 'ACTIVE'], default: 'UNVERIFIED' },
     idNumber: String,
     firebaseUid: String,
-    
+
     // Teacher specific fields
     subjects: [String],
-    
+
     // Student specific fields
     grade: String,
     strand: String,
@@ -22,7 +22,23 @@ const userSchema = new mongoose.Schema({
     professor: String,
     assignedTime: String,
     academicYear: String,
-    
+
+    // Device limit — stores up to 2 registered device IDs per account
+    devices: { type: [String], default: [] },
+    deviceVerificationCode: String,
+    verificationCodeExpiresAt: Date,
+    pendingDeviceId: String,
+    pendingDevicePlatform: String,
+    deviceHistory: [
+        {
+            oldDeviceId: String,
+            newDeviceId: String,
+            changedAt: Date,
+            actor: String,
+            reason: String,
+        }
+    ],
+
     createdAt: { type: Date, default: Date.now }
 });
 
