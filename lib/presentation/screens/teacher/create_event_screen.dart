@@ -592,8 +592,9 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
 
     final day = DateTime(_selectedDate.year, _selectedDate.month, _selectedDate.day);
 
+    String? announcementId;
     try {
-      await AnnouncementService.publishAnnouncement(
+      announcementId = await AnnouncementService.publishAnnouncement(
         title: _titleController.text,
         description: _descController.text,
         time: _selectedTime.format(context),
@@ -609,6 +610,7 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
       );
 
       AppData.lastAnnouncement = {
+        'announcementId': announcementId,
         'title': _titleController.text,
         'description': _descController.text,
         'time': _selectedTime.format(context),
@@ -665,15 +667,30 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
             action: SnackBarAction(
               label: 'UNDO',
               textColor: Colors.white,
-              onPressed: () {
+              onPressed: () async {
                 final dayEvents = AppData.calendarEvents[day];
                 dayEvents?.remove(eventData);
                 if (dayEvents != null && dayEvents.isEmpty) {
                   AppData.calendarEvents.remove(day);
                 }
+
+                if (announcementId != null && announcementId.isNotEmpty) {
+                  final deleted = await AnnouncementService.deleteAnnouncement(announcementId);
+                  if (!deleted && mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Unable to remove announcement from server.'),
+                        backgroundColor: Colors.redAccent,
+                        behavior: SnackBarBehavior.floating,
+                      ),
+                    );
+                  }
+                }
+
+                AppData.lastAnnouncement = null;
                 NotificationService.showLocalNotification(
                   'Announcement Withdrawn',
-                  'Your recent announcement has been removed locally.',
+                  'Your recent announcement has been removed.',
                   type: 'announcement_undo',
                 );
                 if (mounted) {

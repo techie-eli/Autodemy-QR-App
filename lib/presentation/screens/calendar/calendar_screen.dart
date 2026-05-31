@@ -78,53 +78,79 @@ class _CalendarScreenState extends State<CalendarScreen> {
     super.dispose();
   }
 
+  /// Single source-of-truth visibility check.
+  /// [targetType] is what was stored on the event.
+  /// [viewerRole] is the UPPERCASED role of the person currently viewing.
+  bool _isVisibleTo(String? targetType, String viewerRole) {
+    // Admin always sees everything
+    if (viewerRole == 'ADMIN') return true;
+    // No targetType stored = treat as Overall News (backwards compat)
+    if (targetType == null || targetType.isEmpty) return true;
+    switch (targetType.trim()) {
+      case 'Overall News':
+        return true;
+      case 'Only Teachers':
+        return viewerRole == 'TEACHER';
+      case 'Only Students':
+        return viewerRole == 'STUDENT';
+      default:
+        // Teacher-scoped options from the non-admin dropdown
+        // ('Specific Section', 'Whole Grade Level', etc.) are visible
+        // to both teachers and students
+        return true;
+    }
+  }
+
   List<_CalendarEventEntry> _getEventsForDay(DateTime day) {
     final normalizedDay = DateTime(day.year, day.month, day.day);
 
+    // _currentUserRole is loaded async — use widget.userRole as the guaranteed
+    // fallback (it is always set correctly per screen by the caller).
+    final String viewerRole =
+        (_currentUserRole?.toUpperCase().isNotEmpty == true
+            ? _currentUserRole!.toUpperCase()
+            : widget.userRole.toUpperCase());
+
     final localRaw = AppData.calendarEvents[normalizedDay] ?? [];
 
-    // Helper: decide if this event is visible to the current user's role
-    bool _isVisibleToCurrentUser(Map raw) {
-      final target = (raw['targetType'] ?? 'Overall News').toString();
-      final role = (_currentUserRole ?? widget.userRole).toUpperCase();
-      if (target == 'Overall News') return true;
-      if (target == 'Only Teachers') return role == 'TEACHER' || role == 'ADMIN';
-      if (target == 'Only Students') return role == 'STUDENT' || role == 'ADMIN';
-      return true;
-    }
-
     final localEntries = localRaw.asMap().entries
-        .where((entry) => _isVisibleToCurrentUser(entry.value))
+        .where((e) => _isVisibleTo(e.value['targetType']?.toString(), viewerRole))
         .map((entry) {
-      final raw = entry.value;
-      int colorValue = AppTheme.primary.value;
-      if (raw['eventColor'] != null) {
-        final rawColor = raw['eventColor'];
-        colorValue = rawColor is int ? rawColor : int.tryParse(rawColor.toString()) ?? colorValue;
-      }
-      return _CalendarEventEntry(
-        event: CalendarEvent(
-          title: raw['title'] ?? 'Untitled Event',
-          time: raw['time'] ?? 'Whole Day',
-          location: raw['location'] ?? 'Main Campus',
-          description: raw['description'] ?? 'No description provided.',
-          eventTypeLabel: raw['eventTypeLabel'] ?? '',
-          eventColor: Color(colorValue),
-        ),
-        localIndex: entry.key,
-        sourceData: raw,
-      );
-    }).toList();
+          final raw = entry.value;
+          int colorValue = AppTheme.primary.value;
+          if (raw['eventColor'] != null) {
+            final rawColor = raw['eventColor'];
+            colorValue = rawColor is int
+                ? rawColor
+                : int.tryParse(rawColor.toString()) ?? colorValue;
+          }
+          return _CalendarEventEntry(
+            event: CalendarEvent(
+              title: raw['title'] ?? 'Untitled Event',
+              time: raw['time'] ?? 'Whole Day',
+              location: raw['location'] ?? 'Main Campus',
+              description: raw['description'] ?? 'No description provided.',
+              eventTypeLabel: raw['eventTypeLabel'] ?? '',
+              eventColor: Color(colorValue),
+            ),
+            localIndex: entry.key,
+            sourceData: raw,
+          );
+        }).toList();
 
+    // Cloud announcements — same visibility filter applied
     final cloudEntries = _cloudAnnouncements.where((a) {
       if (a['dateTime'] == null) return false;
-      final dt = (a['dateTime'] is DateTime) ? a['dateTime'] : DateTime.tryParse(a['dateTime'].toString());
+      final dt = (a['dateTime'] is DateTime)
+          ? a['dateTime'] as DateTime
+          : DateTime.tryParse(a['dateTime'].toString());
       if (dt == null) return false;
-      return dt.year == day.year && dt.month == day.month && dt.day == day.day;
+      if (!(dt.year == day.year && dt.month == day.month && dt.day == day.day)) return false;
+      return _isVisibleTo(a['targetType']?.toString(), viewerRole);
     }).map((a) {
-      int eventColorValue = AppTheme.primary.value;
+      int colorValue = AppTheme.primary.value;
       if (a['eventColor'] != null) {
-        eventColorValue = int.tryParse(a['eventColor'].toString()) ?? eventColorValue;
+        colorValue = int.tryParse(a['eventColor'].toString()) ?? colorValue;
       }
       return _CalendarEventEntry(
         event: CalendarEvent(
@@ -133,7 +159,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
           location: a['location'] ?? 'Campus',
           description: a['description'] ?? '',
           eventTypeLabel: a['eventTypeLabel'] ?? '',
-          eventColor: Color(eventColorValue),
+          eventColor: Color(colorValue),
         ),
         isCloudAnnouncement: true,
         announcementId: a['_id']?.toString(),
@@ -837,13 +863,18 @@ class _CalendarScreenState extends State<CalendarScreen> {
   /// Admins can always delete. Teachers can delete events they created.
   /// Students cannot delete any event.
   bool _canDeleteEvent(dynamic sourceData) {
-    final role = (_currentUserRole ?? widget.userRole).toUpperCase();
+    final String role =
+        (_currentUserRole?.toUpperCase().isNotEmpty == true
+            ? _currentUserRole!.toUpperCase()
+            : widget.userRole.toUpperCase());
     if (role == 'ADMIN') return true;
     if (role == 'TEACHER') {
       final createdById = sourceData?['createdById']?.toString() ?? '';
+      // Teacher can only delete events they personally created
       return createdById.isNotEmpty && createdById == _currentUserId;
     }
-    return false; // Students cannot delete
+    // Students can never delete
+    return false;
   }
 
   Widget _buildEventList() {
@@ -878,7 +909,9 @@ class _CalendarScreenState extends State<CalendarScreen> {
               MaterialPageRoute(
                 builder: (_) => EventDetailsScreen(
                   event: event.event,
-                  canEdit: widget.userRole == 'ADMIN' || widget.userRole == 'TEACHER',
+                  canEdit: (_currentUserRole?.toUpperCase().isNotEmpty == true
+                      ? _currentUserRole!.toUpperCase()
+                      : widget.userRole.toUpperCase()) != 'STUDENT',
                   canDelete: _canDeleteEvent(event.sourceData),
                   onEdit: () {
                     _showEventDialog(
