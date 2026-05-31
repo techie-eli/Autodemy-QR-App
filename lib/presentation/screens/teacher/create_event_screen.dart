@@ -620,8 +620,12 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
       };
 
       // Write locally so the calendar shows the correct color immediately.
-      // The calendar's _getEventsForDay reads AppData.calendarEvents first,
-      // so this is the single source of truth when there is no backend.
+      // Also store targetType and ownership so the calendar can filter
+      // by audience and gate the delete button correctly.
+      final user = await ApiService.getUserData();
+      final createdById = user?['_id']?.toString() ?? user?['id']?.toString() ?? '';
+      const createdByRole = 'TEACHER';
+
       final eventData = {
         'title': _titleController.text,
         'time': _selectedTime.format(context),
@@ -631,6 +635,10 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
         'eventType': _selectedEventType.name,
         'eventTypeLabel': _selectedEventType.label,
         'eventColor': _selectedEventType.color.value,
+        // Visibility: teacher events default to students only
+        'targetType': 'Only Students',
+        'createdById': createdById,
+        'createdByRole': createdByRole,
       };
       AppData.calendarEvents.putIfAbsent(day, () => []).add(eventData);
 
@@ -681,7 +689,7 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
             ),
           ),
         );
-        Navigator.pop(context);
+        Navigator.pop(context, true); // signals calendar to rebuild
       }
     } catch (e) {
       if (mounted) {

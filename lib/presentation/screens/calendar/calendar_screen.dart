@@ -82,7 +82,20 @@ class _CalendarScreenState extends State<CalendarScreen> {
     final normalizedDay = DateTime(day.year, day.month, day.day);
 
     final localRaw = AppData.calendarEvents[normalizedDay] ?? [];
-    final localEntries = localRaw.asMap().entries.map((entry) {
+
+    // Helper: decide if this event is visible to the current user's role
+    bool _isVisibleToCurrentUser(Map raw) {
+      final target = (raw['targetType'] ?? 'Overall News').toString();
+      final role = (_currentUserRole ?? widget.userRole).toUpperCase();
+      if (target == 'Overall News') return true;
+      if (target == 'Only Teachers') return role == 'TEACHER' || role == 'ADMIN';
+      if (target == 'Only Students') return role == 'STUDENT' || role == 'ADMIN';
+      return true;
+    }
+
+    final localEntries = localRaw.asMap().entries
+        .where((entry) => _isVisibleToCurrentUser(entry.value))
+        .map((entry) {
       final raw = entry.value;
       int colorValue = AppTheme.primary.value;
       if (raw['eventColor'] != null) {
@@ -134,6 +147,10 @@ class _CalendarScreenState extends State<CalendarScreen> {
   List<dynamic> _cloudAnnouncements = [];
   bool _isLoadingCloud = true;
 
+  // Current logged-in user — loaded once in initState
+  String? _currentUserId;
+  String? _currentUserRole;
+
   @override
   void initState() {
     super.initState();
@@ -141,6 +158,17 @@ class _CalendarScreenState extends State<CalendarScreen> {
     _publishDate = _focusedDay;
     _targetType = widget.userRole == 'ADMIN' ? 'Overall News' : 'Specific Section';
     _fetchCloudEvents();
+    _loadCurrentUser();
+  }
+
+  Future<void> _loadCurrentUser() async {
+    final user = await ApiService.getUserData();
+    if (mounted) {
+      setState(() {
+        _currentUserId = user?['_id']?.toString() ?? user?['id']?.toString();
+        _currentUserRole = (user?['role']?.toString() ?? widget.userRole).toUpperCase();
+      });
+    }
   }
 
   Future<void> _fetchCloudEvents() async {
@@ -541,6 +569,10 @@ class _CalendarScreenState extends State<CalendarScreen> {
         'eventType': _selectedEventType.name,
         'eventTypeLabel': selectedLabel,
         'eventColor': selectedColorValue,
+        // Visibility & ownership — used for filtering and delete gating
+        'targetType': _targetType,
+        'createdById': _currentUserId ?? '',
+        'createdByRole': _currentUserRole ?? widget.userRole,
       };
       AppData.calendarEvents.putIfAbsent(day, () => []).add(eventData);
 
@@ -801,6 +833,19 @@ class _CalendarScreenState extends State<CalendarScreen> {
     _showEventDialog(day: _selectedDay!);
   }
 
+  /// Returns true if the current user is allowed to delete this event.
+  /// Admins can always delete. Teachers can delete events they created.
+  /// Students cannot delete any event.
+  bool _canDeleteEvent(dynamic sourceData) {
+    final role = (_currentUserRole ?? widget.userRole).toUpperCase();
+    if (role == 'ADMIN') return true;
+    if (role == 'TEACHER') {
+      final createdById = sourceData?['createdById']?.toString() ?? '';
+      return createdById.isNotEmpty && createdById == _currentUserId;
+    }
+    return false; // Students cannot delete
+  }
+
   Widget _buildEventList() {
     final day = DateTime(_selectedDay!.year, _selectedDay!.month, _selectedDay!.day);
     final events = _getEventsForDay(day);
@@ -834,6 +879,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
                 builder: (_) => EventDetailsScreen(
                   event: event.event,
                   canEdit: widget.userRole == 'ADMIN' || widget.userRole == 'TEACHER',
+                  canDelete: _canDeleteEvent(event.sourceData),
                   onEdit: () {
                     _showEventDialog(
                       eventToEdit: event.event,
@@ -950,6 +996,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
 class EventDetailsScreen extends StatelessWidget {
   final CalendarEvent event;
   final bool canEdit;
+  final bool canDelete;
   final VoidCallback onEdit;
   final Future<bool> Function() onDelete;
 
@@ -957,6 +1004,7 @@ class EventDetailsScreen extends StatelessWidget {
     super.key,
     required this.event,
     this.canEdit = false,
+    this.canDelete = false,
     required this.onEdit,
     required this.onDelete,
   });
@@ -979,13 +1027,14 @@ class EventDetailsScreen extends StatelessWidget {
                 onEdit();
               },
             ),
-          // Delete is always available so any user can remove their own events
-          IconButton(
-            icon: const Icon(Icons.delete_sweep_rounded, color: Colors.redAccent),
-            onPressed: () {
-              _showDeleteDialog(context);
-            },
-          ),
+          // Only admins and the teacher who created the event can delete it
+          if (canDelete)
+            IconButton(
+              icon: const Icon(Icons.delete_sweep_rounded, color: Colors.redAccent),
+              onPressed: () {
+                _showDeleteDialog(context);
+              },
+            ),
         ],
       ),
       body: SingleChildScrollView(
